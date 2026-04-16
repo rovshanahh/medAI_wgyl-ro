@@ -8,6 +8,7 @@ from medalix.quality.quality_assessor import QualityAssessor
 from medalix.ood.ood_detector import OODDetector
 from medalix.detection.conformal_router import ConformalRouter
 from medalix.policy.governed_decision_policy import GovernedDecisionPolicy
+from medalix.policy.policy_models import PolicyInput
 
 router = APIRouter()
 
@@ -74,13 +75,15 @@ async def analyze_image(file: UploadFile = File(...)):
         conformal_router = ConformalRouter()
         routing_result = conformal_router.decide(inference_result)
 
-        policy = GovernedDecisionPolicy()
-        policy_result = policy.evaluate(
+        policy_input = PolicyInput(
             ood_result=ood_result,
             routing_result=routing_result,
             inference_result=inference_result,
             quality_result=quality_result,
         )
+
+        policy = GovernedDecisionPolicy()
+        policy_output = policy.evaluate(policy_input)
 
         safe_inference_result = {
             "top_label": inference_result.get("top_label"),
@@ -89,14 +92,21 @@ async def analyze_image(file: UploadFile = File(...)):
             "epistemic_uncertainty": inference_result.get("epistemic_uncertainty", {}),
         }
 
-        if policy_result.get("action") == "STOP":
+        safe_policy_result = {
+            "action": policy_output.action,
+            "reason": policy_output.reason,
+            "risk_category": policy_output.risk_category,
+            "warnings": policy_output.warnings,
+        }
+
+        if policy_output.action == "STOP":
             return {
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "size_bytes": len(content),
                 "input_gate": safe_input_gate_result,
                 "ood": ood_result,
-                "policy": policy_result,
+                "policy": safe_policy_result,
                 "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
                 "message": "Analysis stopped due to out-of-distribution input",
             }
@@ -111,7 +121,7 @@ async def analyze_image(file: UploadFile = File(...)):
             "quality": quality_result,
             "ood": ood_result,
             "routing": routing_result,
-            "policy": policy_result,
+            "policy": safe_policy_result,
             "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
             "message": "Governed pipeline completed successfully",
         }
