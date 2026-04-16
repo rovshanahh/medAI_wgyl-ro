@@ -1,0 +1,402 @@
+[
+  {
+    "filename": "chest_eval_1.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9827646613121033,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_10.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9873420596122742,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_11.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9993626475334167,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_12.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9890790581703186,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_13.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9981879591941833,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_14.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9995954632759094,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_15.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.999830961227417,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "LOW"
+  },
+  {
+    "filename": "chest_eval_16.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.609813392162323,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_17.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9996980428695679,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_18.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9952781200408936,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_19.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9997603297233582,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_2.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9990344047546387,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_20.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.7180893421173096,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "LOW"
+  },
+  {
+    "filename": "chest_eval_3.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9990679621696472,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_4.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9978925585746765,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_5.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.6654706597328186,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "chest_eval_6.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9780478477478027,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_7.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ESCALATE",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9998772144317627,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_8.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ANSWER",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.9998505115509033,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "MODERATE"
+  },
+  {
+    "filename": "chest_eval_9.jpg",
+    "expected_group": "chest_xray",
+    "stage": "full_pipeline",
+    "final_action": "ESCALATE",
+    "input_gate_label": "chest_xray",
+    "input_gate_confidence": 0.8958183526992798,
+    "ood_tier": "IN_DISTRIBUTION",
+    "risk_category": "HIGH"
+  },
+  {
+    "filename": "notchest_eval_1.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9972440004348755,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_10.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9985939860343933,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_11.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9948775768280029,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_12.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9999998807907104,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_13.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9980559349060059,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_14.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9999607801437378,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_15.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9978359341621399,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_16.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 1.0,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_17.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.8719728589057922,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_18.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9997242093086243,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_19.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9995643496513367,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_2.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9866302013397217,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_20.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9395886659622192,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_3.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9999994039535522,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_4.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.8156450986862183,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_5.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9999268054962158,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_6.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9972635507583618,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_7.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9939109086990356,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_8.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9781014919281006,
+    "ood_tier": null,
+    "risk_category": null
+  },
+  {
+    "filename": "notchest_eval_9.jpg",
+    "expected_group": "not_chest_xray",
+    "stage": "input_gate",
+    "final_action": "STOP",
+    "input_gate_label": "not_chest_xray",
+    "input_gate_confidence": 0.9895687699317932,
+    "ood_tier": null,
+    "risk_category": null
+  }
+]
