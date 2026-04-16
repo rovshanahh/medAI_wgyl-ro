@@ -12,6 +12,8 @@ from medalix.policy.policy_models import PolicyInput
 from medalix.audit.logger import Logger
 from medalix.audit.audit_trace_builder import AuditTraceBuilder
 from medalix.explainability.explainability_engine import ExplainabilityEngine
+from medalix.retention.temp_file_manager import TempFileManager
+from medalix.retention.data_retention_manager import DataRetentionManager
 
 router = APIRouter()
 
@@ -33,11 +35,18 @@ def root():
 
 @router.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
+    temp_path = None
+    retention_result = None
+
     try:
         content = await file.read()
 
         logger = Logger()
         trace_builder = AuditTraceBuilder()
+        temp_file_manager = TempFileManager()
+        retention_manager = DataRetentionManager()
+
+        temp_path = temp_file_manager.save_upload(file.filename, content)
 
         validator = IngestionValidator()
         validator.validate(file.filename, file.content_type, content)
@@ -169,3 +178,9 @@ async def analyze_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}") from e
+    finally:
+        if temp_path is not None:
+            retention_manager = DataRetentionManager()
+            retention_result = retention_manager.delete_now(temp_path)
+            logger = Logger()
+            logger.info({"event": "retention_cleanup", "result": retention_result})
