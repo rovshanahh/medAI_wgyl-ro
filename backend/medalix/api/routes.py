@@ -9,6 +9,9 @@ from medalix.ood.ood_detector import OODDetector
 from medalix.detection.conformal_router import ConformalRouter
 from medalix.policy.governed_decision_policy import GovernedDecisionPolicy
 from medalix.policy.policy_models import PolicyInput
+from medalix.audit.logger import Logger
+from medalix.audit.audit_trace_builder import AuditTraceBuilder
+from medalix.explainability.explainability_engine import ExplainabilityEngine
 
 router = APIRouter()
 
@@ -33,6 +36,9 @@ async def analyze_image(file: UploadFile = File(...)):
     try:
         content = await file.read()
 
+        logger = Logger()
+        trace_builder = AuditTraceBuilder()
+
         validator = IngestionValidator()
         validator.validate(file.filename, file.content_type, content)
 
@@ -47,24 +53,45 @@ async def analyze_image(file: UploadFile = File(...)):
         }
 
         if input_gate_result["hard_reject"]:
+            policy_result = {
+                "action": "STOP",
+                "reason": "Input is not a chest X-ray-like image",
+            }
+
+            trace = trace_builder.build(
+                filename=file.filename,
+                input_gate=safe_input_gate_result,
+                quality={},
+                ood={},
+                routing={},
+                policy=policy_result,
+                inference_summary={},
+            )
+            logger.info({"event": "analysis_completed", "trace": trace.__dict__})
+
             return {
                 "filename": file.filename,
                 "content_type": file.content_type,
                 "size_bytes": len(content),
                 "input_gate": safe_input_gate_result,
-                "policy": {
-                    "action": "STOP",
-                    "reason": "Input is not a chest X-ray-like image",
-                },
+                "policy": policy_result,
                 "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
                 "message": "Analysis stopped before inference",
             }
 
         preprocessor = PreprocessingPipeline()
-        _, tensor = preprocessor.run(content)
+        original_image, tensor = preprocessor.run(content)
 
         model = EnsembleModel()
         inference_result = model.predict(tensor)
+
+        explainability_engine = ExplainabilityEngine(model.model)
+        explainability_result = explainability_engine.generate(
+            original_image=original_image,
+            tensor=tensor,
+            inference_result=inference_result,
+            filename=file.filename,
+        )
 
         quality_assessor = QualityAssessor()
         quality_result = quality_assessor.assess(tensor)
@@ -99,6 +126,17 @@ async def analyze_image(file: UploadFile = File(...)):
             "warnings": policy_output.warnings,
         }
 
+        trace = trace_builder.build(
+            filename=file.filename,
+            input_gate=safe_input_gate_result,
+            quality=quality_result,
+            ood=ood_result,
+            routing=routing_result,
+            policy=safe_policy_result,
+            inference_summary=safe_inference_result,
+        )
+        logger.info({"event": "analysis_completed", "trace": trace.__dict__})
+
         if policy_output.action == "STOP":
             return {
                 "filename": file.filename,
@@ -118,6 +156,7 @@ async def analyze_image(file: UploadFile = File(...)):
             "input_gate": safe_input_gate_result,
             "tensor_shape": list(tensor.shape),
             "inference": safe_inference_result,
+            "explainability": explainability_result,
             "quality": quality_result,
             "ood": ood_result,
             "routing": routing_result,
