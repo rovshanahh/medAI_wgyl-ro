@@ -4,13 +4,18 @@ from pathlib import Path
 
 class ConformalRouter:
     def __init__(self, config_path: str = "reference_data/conformal_scores.json"):
-        config = json.loads(Path(config_path).read_text())
+        config = json.loads(Path(config_path).read_text(encoding="utf-8"))
         self.alpha = config["alpha"]
         self.threshold = config["threshold"]
 
-    def decide(self, inference_result: dict) -> dict:
-        probs = inference_result.get("probabilities", {})
-        if not probs:
+    def decide(self, detection_result: dict) -> dict:
+        detection_result = detection_result or {}
+
+        region = detection_result.get("region")
+        modality = detection_result.get("modality")
+        confidence = float(detection_result.get("confidence", 0.0) or 0.0)
+
+        if not region or not modality:
             return {
                 "accepted_findings_set": [],
                 "set_size": 0,
@@ -19,19 +24,17 @@ class ConformalRouter:
                 "threshold": self.threshold,
                 "top_probability": 0.0,
                 "nonconformity": 1.0,
+                "routing_candidates": [],
             }
 
-        sorted_items = sorted(probs.items(), key=lambda x: x[1], reverse=True)
-        top_label, top_prob = sorted_items[0]
-        nonconformity = 1.0 - float(top_prob)
-
-        positive_findings = inference_result.get("positive_findings", [])
+        candidate = f"{region}:{modality}"
+        nonconformity = 1.0 - confidence
 
         if nonconformity <= self.threshold:
-            accepted_findings_set = positive_findings if positive_findings else [top_label]
+            accepted_findings_set = [candidate]
             requires_confirmation = False
         else:
-            accepted_findings_set = positive_findings[:5] if positive_findings else [top_label]
+            accepted_findings_set = [candidate]
             requires_confirmation = True
 
         return {
@@ -40,6 +43,7 @@ class ConformalRouter:
             "requires_confirmation": requires_confirmation,
             "alpha": self.alpha,
             "threshold": self.threshold,
-            "top_probability": top_prob,
+            "top_probability": confidence,
             "nonconformity": nonconformity,
+            "routing_candidates": accepted_findings_set,
         }

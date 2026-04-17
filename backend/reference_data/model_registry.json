@@ -1,0 +1,39 @@
+{
+    "registry_version": "1.0.0",
+    "routes": {
+      "chest:xray": "chest_xray_ensemble_v1"
+    },
+    "models": {
+      "chest_xray_ensemble_v1": {
+        "model_id": "chest_xray_ensemble_v1",
+        "version": "1.0.0",
+        "architecture": "CNN",
+        "region": "chest",
+        "modality": "xray",
+        "input_shape": [1, 3, 224, 224],
+        "status": "ACTIVE",
+        "checksum": "ensemble-config-checksum-placeholder",
+        "model_path": "",
+        "ensemble_members": [
+          {
+            "member_id": "member_1",
+            "repo_id": "itsomk/chexpert-densenet121",
+            "filename": "pytorch_model.safetensors",
+            "seed": 11
+          },
+          {
+            "member_id": "member_2",
+            "repo_id": "itsomk/chexpert-densenet121",
+            "filename": "pytorch_model.safetensors",
+            "seed": 22
+          },
+          {
+            "member_id": "member_3",
+            "repo_id": "itsomk/chexpert-densenet121",
+            "filename": "pytorch_model.safetensors",
+            "seed": 33
+          }
+        ]
+      }
+    }
+  }

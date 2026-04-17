@@ -1,0 +1,12 @@
+{
+    "version": "1.0.0",
+    "answer_threshold": 0.70,
+    "refusal_threshold": 0.80,
+    "escalation_threshold": 0.90,
+    "stop_threshold": 0.95,
+    "moderate_set_size": 3,
+    "high_set_size": 5,
+    "moderate_epistemic_threshold": 0.003,
+    "high_epistemic_threshold": 0.01,
+    "refuse_epistemic_threshold": 0.02
+  }

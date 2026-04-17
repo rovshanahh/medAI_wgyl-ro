@@ -1,0 +1,516 @@
+from pathlib import Path
+
+from medalix.audit.audit_trace_builder import AuditTraceBuilder
+from medalix.audit.logger import Logger
+from medalix.detection.conformal_router import ConformalRouter
+from medalix.detection.region_modality_detector import RegionModalityDetector
+from medalix.explainability.explainability_engine import ExplainabilityEngine
+from medalix.ingestion.chest_xray_input_gate import ChestXrayInputGate
+from medalix.ingestion.ingestion_validator import IngestionValidator
+from medalix.inference.ensemble_model import EnsembleModel
+from medalix.ood.ood_detector import OODDetector
+from medalix.policy.governed_decision_policy import GovernedDecisionPolicy
+from medalix.policy.policy_models import PolicyInput
+from medalix.preprocessing.preprocessing_pipeline import PreprocessingPipeline
+from medalix.quality.quality_assessor import QualityAssessor
+from medalix.registry.model_registry import ModelRegistry
+from medalix.registry.model_router import ModelRouter
+from medalix.retention.data_retention_manager import DataRetentionManager
+from medalix.retention.temp_file_manager import TempFileManager
+
+from .cleanup_coordinator import CleanupCoordinator
+from .error_response_builder import ErrorResponseBuilder
+from .pipeline_state import PipelineState
+from .session_store import SessionStore
+
+NON_DIAGNOSTIC_DISCLAIMER = (
+    "Research-use only. This output is non-diagnostic and must not be used "
+    "for clinical decision-making."
+)
+
+
+class Orchestrator:
+    def __init__(self) -> None:
+        self.logger = Logger()
+        self.trace_builder = AuditTraceBuilder()
+        self.temp_file_manager = TempFileManager()
+        self.retention_manager = DataRetentionManager()
+        self.cleanup_coordinator = CleanupCoordinator(
+            self.retention_manager,
+            self.logger,
+        )
+        self.session_store = SessionStore(ttl_seconds=1800)
+
+        registry_path = Path("reference_data/model_registry.json")
+        self.model_registry = ModelRegistry(str(registry_path))
+        self.model_router = ModelRouter(self.model_registry)
+
+    def get_result(self, analysis_id: str) -> dict | None:
+        result = self.session_store.get_result(analysis_id)
+        if result is None:
+            self.logger.info({"event": "result_lookup_miss", "analysis_id": analysis_id})
+        else:
+            self.logger.info({"event": "result_lookup_hit", "analysis_id": analysis_id})
+        return result
+
+    def _finalize_and_store(self, state: PipelineState, payload: dict) -> dict:
+        self.session_store.save_result(state.analysis_id, payload)
+        self.logger.info({"event": "result_stored", "analysis_id": state.analysis_id})
+        return payload
+
+    def _build_input_gate_result(self, input_gate_result: dict | None = None) -> dict:
+        input_gate_result = input_gate_result or {}
+        hard_reject = input_gate_result.get("hard_reject", False)
+        return {
+            "accepted_for_analysis": not hard_reject,
+            "confidence": input_gate_result.get("confidence"),
+            "message": (
+                "Input accepted by the active workflow."
+                if not hard_reject
+                else "Input rejected by the active workflow."
+            ),
+        }
+
+    def _build_detection_result(self, raw_detection_result: dict | None = None) -> dict:
+        raw_detection_result = raw_detection_result or {}
+        return {
+            "region": raw_detection_result.get("region"),
+            "modality": raw_detection_result.get("modality"),
+            "confidence": raw_detection_result.get("confidence"),
+            "requires_confirmation": bool(
+                raw_detection_result.get("requires_confirmation", False)
+            ),
+        }
+
+    def _build_routing_result(
+        self,
+        raw_routing_result: dict | None = None,
+        selected_model: str | None = None,
+    ) -> dict:
+        raw_routing_result = raw_routing_result or {}
+        accepted_findings_set = raw_routing_result.get("accepted_findings_set", [])
+        return {
+            "accepted_findings_set": accepted_findings_set,
+            "selected_model": selected_model or raw_routing_result.get("selected_model"),
+            "set_size": raw_routing_result.get("set_size", len(accepted_findings_set)),
+            "requires_confirmation": raw_routing_result.get("requires_confirmation", False),
+            "alpha": raw_routing_result.get("alpha"),
+            "threshold": raw_routing_result.get("threshold"),
+            "top_probability": raw_routing_result.get("top_probability"),
+            "nonconformity": raw_routing_result.get("nonconformity"),
+            "routing_candidates": raw_routing_result.get(
+                "routing_candidates", accepted_findings_set
+            ),
+        }
+
+    def _build_policy_result(
+        self,
+        action: str,
+        reason: str,
+        risk_category: str | None = None,
+        warnings: list[str] | None = None,
+    ) -> dict:
+        return {
+            "action": action,
+            "reason": reason,
+            "risk_category": risk_category,
+            "warnings": warnings or [],
+        }
+
+    def _build_ood_result(self, ood_result: dict | None = None) -> dict:
+        ood_result = ood_result or {}
+        return {
+            "tier": ood_result.get("tier"),
+            "score": ood_result.get("score"),
+            "is_hard_ood": ood_result.get("is_hard_ood", False),
+            "reason": ood_result.get("reason"),
+        }
+
+    def _build_explainability_result(
+        self,
+        explainability_result: dict | None = None,
+    ) -> dict:
+        explainability_result = explainability_result or {}
+        return {
+            "method": explainability_result.get("method"),
+            "heatmap_path": explainability_result.get("heatmap_path"),
+            "warning": explainability_result.get("warning"),
+        }
+
+    def _build_quality_result(self, quality_result: dict | None = None) -> dict:
+        quality_result = quality_result or {}
+        return {
+            "status": quality_result.get("status"),
+            "warnings": quality_result.get("warnings", []),
+            "requires_reupload": quality_result.get("requires_reupload"),
+            "blocking": quality_result.get("blocking", False),
+            "reason": quality_result.get("reason"),
+            "metrics": quality_result.get("metrics", {}),
+        }
+
+    def _build_inference_result(self, inference_result: dict | None = None) -> dict:
+        inference_result = inference_result or {}
+        return {
+            "top_label": inference_result.get("top_label"),
+            "top_probability": inference_result.get("top_probability"),
+            "positive_findings": inference_result.get("positive_findings", []),
+            "probabilities": inference_result.get("probabilities", {}),
+            "epistemic_uncertainty": inference_result.get("epistemic_uncertainty", {}),
+            "aleatoric_uncertainty": inference_result.get("aleatoric_uncertainty", {}),
+            "reliability_score": inference_result.get("reliability_score"),
+            "disagreement_score": inference_result.get("disagreement_score"),
+            "secondary_verification_triggered": inference_result.get(
+                "secondary_verification_triggered", False
+            ),
+            "ensemble_member_count": inference_result.get("ensemble_member_count"),
+        }
+
+    def _selected_model_payload(self, selected_model) -> dict:
+        if selected_model is None:
+            return {}
+        return {
+            "model_id": getattr(selected_model, "model_id", None),
+            "version": getattr(selected_model, "version", None),
+            "architecture": getattr(selected_model, "architecture", None),
+            "region": getattr(selected_model, "region", None),
+            "modality": getattr(selected_model, "modality", None),
+            "input_shape": list(getattr(selected_model, "input_shape", [])),
+            "status": getattr(selected_model, "status", None),
+        }
+
+    def _build_trace(self, state: PipelineState):
+        return self.trace_builder.build(
+            filename=state.filename,
+            input_gate=state.input_gate_result or {},
+            detection=state.detection_result or {},
+            routing=state.routing_result or {},
+            selected_model=self._selected_model_payload(state.selected_model),
+            ood=state.ood_result or {},
+            quality=state.quality_result or {},
+            inference_summary=state.inference_result or {},
+            policy=state.policy_result or {},
+            explainability=state.explainability_result or {},
+            pipeline_stages=state.stage_history,
+        )
+
+    def execute(self, filename: str, content_type: str | None, content: bytes) -> dict:
+        state = PipelineState(
+            analysis_id=self.session_store.create_analysis_id(),
+            filename=filename,
+            content_type=content_type or "application/octet-stream",
+            size_bytes=len(content),
+        )
+
+        try:
+            state.set_stage("temp_save")
+            state.temp_path = self.temp_file_manager.save_upload(filename, content)
+
+            state.set_stage("ingestion_validation")
+            validator = IngestionValidator()
+            validator.validate(filename, content_type, content)
+
+            state.set_stage("input_gate")
+            input_gate = ChestXrayInputGate()
+            raw_input_gate_result = input_gate.evaluate(content)
+            state.input_gate_result = self._build_input_gate_result(raw_input_gate_result)
+
+            if raw_input_gate_result.get("hard_reject", False):
+                state.detection_result = {}
+                state.routing_result = {}
+                state.quality_result = {}
+                state.ood_result = {}
+                state.explainability_result = {}
+                state.policy_result = self._build_policy_result(
+                    action="STOP",
+                    reason="Input was rejected by the active workflow before inference.",
+                    risk_category="HIGH",
+                    warnings=["Input not accepted for analysis"],
+                )
+                state.trace = self._build_trace(state)
+                self.logger.info(
+                    {
+                        "event": "analysis_completed",
+                        "analysis_id": state.analysis_id,
+                        "trace": state.trace.to_dict(),
+                    }
+                )
+                return self._finalize_and_store(
+                    state,
+                    {
+                        "analysis_id": state.analysis_id,
+                        "filename": state.filename,
+                        "content_type": state.content_type,
+                        "size_bytes": state.size_bytes,
+                        "input_gate": state.input_gate_result,
+                        "detection": state.detection_result,
+                        "routing": state.routing_result,
+                        "quality": state.quality_result,
+                        "ood": state.ood_result,
+                        "explainability": state.explainability_result,
+                        "selected_model": self._selected_model_payload(state.selected_model),
+                        "policy": state.policy_result,
+                        "warnings": state.warnings,
+                        "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
+                        "message": "Analysis stopped before inference",
+                    },
+                )
+
+            state.set_stage("preprocessing")
+            preprocessor = PreprocessingPipeline()
+            state.original_image, state.tensor = preprocessor.run(content)
+
+            state.set_stage("quality")
+            quality_assessor = QualityAssessor()
+            raw_quality_result = quality_assessor.assess(state.tensor)
+            state.quality_result = self._build_quality_result(raw_quality_result)
+
+            state.set_stage("detection")
+            detector = RegionModalityDetector()
+            raw_detection_result = detector.predict(raw_input_gate_result)
+            state.detection_result = self._build_detection_result(raw_detection_result)
+
+            state.set_stage("routing")
+            conformal_router = ConformalRouter()
+            raw_routing_result = conformal_router.decide(raw_detection_result)
+
+            if raw_routing_result.get("requires_confirmation", False):
+                state.routing_result = self._build_routing_result(raw_routing_result)
+                state.ood_result = {}
+                state.explainability_result = {}
+                state.policy_result = self._build_policy_result(
+                    action="REQUEST_EVIDENCE",
+                    reason="Multiple routing candidates found. Manual confirmation required.",
+                    risk_category="MODERATE",
+                    warnings=["Automatic routing suspended"],
+                )
+                state.trace = self._build_trace(state)
+                self.logger.info(
+                    {
+                        "event": "analysis_completed",
+                        "analysis_id": state.analysis_id,
+                        "trace": state.trace.to_dict(),
+                    }
+                )
+                return self._finalize_and_store(
+                    state,
+                    {
+                        "analysis_id": state.analysis_id,
+                        "filename": state.filename,
+                        "content_type": state.content_type,
+                        "size_bytes": state.size_bytes,
+                        "input_gate": state.input_gate_result,
+                        "detection": state.detection_result,
+                        "routing": state.routing_result,
+                        "quality": state.quality_result,
+                        "ood": state.ood_result,
+                        "explainability": state.explainability_result,
+                        "selected_model": self._selected_model_payload(state.selected_model),
+                        "policy": state.policy_result,
+                        "warnings": state.warnings,
+                        "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
+                        "message": "Manual confirmation required before inference",
+                    },
+                )
+
+            state.set_stage("registry")
+            selected_model_metadata = self.model_router.resolve(
+                region=state.detection_result["region"],
+                modality=state.detection_result["modality"],
+                input_shape=tuple(state.tensor.shape),
+            )
+            state.selected_model = selected_model_metadata
+            state.routing_result = self._build_routing_result(
+                raw_routing_result=raw_routing_result,
+                selected_model=selected_model_metadata.model_id,
+            )
+
+            state.set_stage("inference")
+            try:
+                model = EnsembleModel(model_metadata=selected_model_metadata)
+                raw_inference_result = model.predict(state.tensor)
+                state.inference_result = self._build_inference_result(raw_inference_result)
+            except Exception as exc:
+                self.logger.error(
+                    {
+                        "event": "inference_failed",
+                        "analysis_id": state.analysis_id,
+                        "filename": state.filename,
+                        "stage": state.current_stage,
+                        "message": str(exc),
+                    }
+                )
+                return self._finalize_and_store(
+                    state,
+                    ErrorResponseBuilder.build_processing_error(
+                        analysis_id=state.analysis_id,
+                        stage=state.current_stage,
+                        message=str(exc),
+                    ),
+                )
+
+            state.set_stage("ood")
+            ood_detector = OODDetector()
+            raw_ood_result = ood_detector.evaluate(state.tensor, raw_inference_result)
+            state.ood_result = self._build_ood_result(raw_ood_result)
+
+            if state.ood_result.get("is_hard_ood", False):
+                state.explainability_result = {}
+                state.policy_result = self._build_policy_result(
+                    action="STOP",
+                    reason="Hard OOD input detected after feature evaluation.",
+                    risk_category="HIGH",
+                    warnings=["Input is out of supported distribution"],
+                )
+                state.trace = self._build_trace(state)
+                self.logger.info(
+                    {
+                        "event": "analysis_completed",
+                        "analysis_id": state.analysis_id,
+                        "trace": state.trace.to_dict(),
+                    }
+                )
+                return self._finalize_and_store(
+                    state,
+                    {
+                        "analysis_id": state.analysis_id,
+                        "filename": state.filename,
+                        "content_type": state.content_type,
+                        "size_bytes": state.size_bytes,
+                        "input_gate": state.input_gate_result,
+                        "detection": state.detection_result,
+                        "routing": state.routing_result,
+                        "quality": state.quality_result,
+                        "ood": state.ood_result,
+                        "explainability": state.explainability_result,
+                        "selected_model": self._selected_model_payload(state.selected_model),
+                        "policy": state.policy_result,
+                        "warnings": state.warnings,
+                        "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
+                        "message": "Analysis stopped due to OOD detection",
+                    },
+                )
+
+            state.set_stage("explainability")
+            try:
+                explainability_engine = ExplainabilityEngine(model.model)
+                raw_explainability_result = explainability_engine.generate(
+                    original_image=state.original_image,
+                    tensor=state.tensor,
+                    inference_result=raw_inference_result,
+                    filename=filename,
+                )
+                state.explainability_result = self._build_explainability_result(
+                    raw_explainability_result
+                )
+            except Exception as exc:
+                warning_message = f"Explainability generation failed: {str(exc)}"
+                state.warnings.append(warning_message)
+                self.logger.warn(
+                    {
+                        "event": "explainability_failed",
+                        "analysis_id": state.analysis_id,
+                        "filename": state.filename,
+                        "stage": state.current_stage,
+                        "message": str(exc),
+                    }
+                )
+                state.explainability_result = self._build_explainability_result(
+                    {
+                        "method": None,
+                        "heatmap_path": None,
+                        "warning": warning_message,
+                    }
+                )
+
+            state.set_stage("policy")
+            policy_input = PolicyInput(
+                ood_result=state.ood_result,
+                routing_result=state.routing_result,
+                inference_result=raw_inference_result,
+                quality_result=state.quality_result,
+            )
+            policy_output = GovernedDecisionPolicy().evaluate(policy_input)
+            state.policy_result = self._build_policy_result(
+                action=policy_output.action,
+                reason=policy_output.reason,
+                risk_category=policy_output.risk_category,
+                warnings=policy_output.warnings,
+            )
+
+            state.trace = self._build_trace(state)
+            self.logger.info(
+                {
+                    "event": "analysis_completed",
+                    "analysis_id": state.analysis_id,
+                    "trace": state.trace.to_dict(),
+                }
+            )
+
+            payload = {
+                "analysis_id": state.analysis_id,
+                "filename": state.filename,
+                "content_type": state.content_type,
+                "size_bytes": state.size_bytes,
+                "input_gate": state.input_gate_result,
+                "detection": state.detection_result,
+                "quality": state.quality_result,
+                "ood": state.ood_result,
+                "routing": state.routing_result,
+                "selected_model": self._selected_model_payload(state.selected_model),
+                "explainability": state.explainability_result,
+                "policy": state.policy_result,
+                "warnings": state.warnings,
+                "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
+            }
+
+            if policy_output.action != "STOP":
+                payload.update(
+                    {
+                        "tensor_shape": list(state.tensor.shape),
+                        "inference": state.inference_result,
+                        "message": "Governed pipeline completed successfully",
+                    }
+                )
+            else:
+                payload["message"] = "Analysis stopped due to policy or distribution checks"
+
+            return self._finalize_and_store(state, payload)
+
+        except ValueError as exc:
+            self.logger.error(
+                {
+                    "event": "validation_failed",
+                    "analysis_id": state.analysis_id,
+                    "filename": state.filename,
+                    "stage": state.current_stage,
+                    "message": str(exc),
+                }
+            )
+            return self._finalize_and_store(
+                state,
+                ErrorResponseBuilder.build_validation_error(
+                    analysis_id=state.analysis_id,
+                    stage=state.current_stage,
+                    message=str(exc),
+                ),
+            )
+        except Exception as exc:
+            self.logger.error(
+                {
+                    "event": "processing_failed",
+                    "analysis_id": state.analysis_id,
+                    "filename": state.filename,
+                    "stage": state.current_stage,
+                    "message": str(exc),
+                }
+            )
+            return self._finalize_and_store(
+                state,
+                ErrorResponseBuilder.build_processing_error(
+                    analysis_id=state.analysis_id,
+                    stage=state.current_stage,
+                    message=str(exc),
+                ),
+            )
+        finally:
+            self.cleanup_coordinator.cleanup_temp_file(state.temp_path)

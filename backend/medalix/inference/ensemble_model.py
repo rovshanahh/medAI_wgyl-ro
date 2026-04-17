@@ -32,7 +32,6 @@ class DenseNet121CheXpert(nn.Module):
         super().__init__()
         self.densenet = models.densenet121(weights=None)
         num_features = self.densenet.classifier.in_features
-
         self.dropout_p = dropout_p
         self.densenet.classifier = nn.Linear(num_features, num_labels)
 
@@ -66,7 +65,8 @@ def load_base_model() -> DenseNet121CheXpert:
 
 
 class EnsembleModel:
-    def __init__(self, mc_passes: int = 10):
+    def __init__(self, model_metadata=None, mc_passes: int = 10):
+        self.model_metadata = model_metadata
         self.model = load_base_model()
         self.mc_passes = mc_passes
 
@@ -94,6 +94,16 @@ class EnsembleModel:
             LABELS[i] for i in range(len(LABELS)) if mean_probs[i] >= 0.5
         ]
 
+        predictive_entropy = float(
+            -np.sum(
+                mean_probs * np.log(mean_probs + 1e-12)
+                + (1.0 - mean_probs) * np.log((1.0 - mean_probs) + 1e-12)
+            )
+        )
+
+        reliability_score = float(1.0 - np.mean(var_probs))
+        reliability_score = max(0.0, min(1.0, reliability_score))
+
         return {
             "top_label": LABELS[top_idx],
             "top_probability": float(mean_probs[top_idx]),
@@ -104,5 +114,14 @@ class EnsembleModel:
             "epistemic_uncertainty": {
                 LABELS[i]: float(var_probs[i]) for i in range(len(LABELS))
             },
+            "aleatoric_uncertainty": {
+                "predictive_entropy": predictive_entropy
+            },
+            "reliability_score": reliability_score,
+            "disagreement_score": float(np.mean(var_probs)),
+            "secondary_verification_triggered": False,
+            "ensemble_member_count": 1,
+            "model_id": getattr(self.model_metadata, "model_id", "chest_xray_mvp"),
+            "model_version": getattr(self.model_metadata, "version", "mvp"),
             "features": feature_vector.tolist() if feature_vector is not None else None,
         }

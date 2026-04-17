@@ -2,12 +2,31 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-@dataclass
+@dataclass(frozen=True)
 class AuditTrace:
     filename: str
-    input_gate: dict[str, Any]
-    quality: dict[str, Any]
-    ood: dict[str, Any]
-    routing: dict[str, Any]
-    policy: dict[str, Any]
-    inference_summary: dict[str, Any] = field(default_factory=dict)
+    input_gate: dict
+    detection: dict
+    routing: dict
+    selected_model: dict
+    ood: dict
+    quality: dict
+    inference_summary: dict
+    policy: dict
+    explainability: dict
+    pipeline_stages: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "filename": self.filename,
+            "input_gate": self.input_gate,
+            "detection": self.detection,
+            "routing": self.routing,
+            "selected_model": self.selected_model,
+            "ood": self.ood,
+            "quality": self.quality,
+            "inference_summary": self.inference_summary,
+            "policy": self.policy,
+            "explainability": self.explainability,
+            "pipeline_stages": list(self.pipeline_stages),
+        }

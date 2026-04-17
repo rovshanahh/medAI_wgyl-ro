@@ -21,7 +21,20 @@ class ExplainabilityEngine:
         inference_result: dict,
         filename: str,
     ) -> dict:
-        target_layers = [self.model.densenet.features[-1]]
+        if self.model is None:
+            raise ValueError("Explainability model is missing")
+
+        if not isinstance(tensor, torch.Tensor):
+            raise ValueError("Explainability input tensor must be a torch.Tensor")
+
+        if tensor.ndim != 4:
+            raise ValueError(
+                f"Expected explainability tensor shape [B, C, H, W], got {tuple(tensor.shape)}"
+            )
+
+        target_layers = self._resolve_target_layers()
+        if not target_layers:
+            raise ValueError("No valid target layer found for explainability generation")
 
         rgb_image = original_image.convert("RGB").resize((224, 224))
         rgb_array = np.array(rgb_image).astype(np.float32) / 255.0
@@ -50,3 +63,11 @@ class ExplainabilityEngine:
             "heatmap_path": str(heatmap_path),
             "warning": "",
         }
+
+    def _resolve_target_layers(self):
+        if hasattr(self.model, "densenet") and hasattr(self.model.densenet, "features"):
+            features = self.model.densenet.features
+            if len(features) > 0:
+                return [features[-1]]
+
+        raise ValueError("Unsupported model structure for Grad-CAM++ target layer resolution")
