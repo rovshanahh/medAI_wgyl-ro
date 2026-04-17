@@ -1,0 +1,597 @@
+"use client";
+
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  CircleHelp,
+  House,
+  LayoutDashboard,
+  Mail,
+  MapPin,
+  Phone,
+  ShieldPlus,
+} from "lucide-react";
+import Link from "next/link";
+
+type AnalysisResponse = {
+  filename?: string;
+  input_gate?: {
+    accepted_for_analysis?: boolean;
+    confidence?: number;
+    message?: string;
+  };
+  detection?: {
+    region?: string;
+    modality?: string;
+    confidence?: number;
+    requires_confirmation?: boolean;
+  };
+  inference?: {
+    top_label?: string;
+    top_probability?: number;
+  };
+  explainability?: {
+    method?: string;
+    heatmap_path?: string;
+    warning?: string;
+  };
+  quality?: {
+    status?: string | null;
+    warnings?: string[];
+    requires_reupload?: boolean | null;
+    blocking?: boolean;
+    reason?: string;
+  };
+  routing?: {
+    accepted_findings_set?: string[];
+    selected_model?: string;
+    set_size?: number;
+    requires_confirmation?: boolean;
+  };
+  ood?: {
+    tier?: string;
+    score?: number;
+  };
+  policy?: {
+    action?: string;
+    reason?: string;
+    risk_category?: string;
+    warnings?: string[];
+  };
+  disclaimer?: string;
+};
+
+const BACKEND_URL = "http://localhost:8000/analyze";
+const HEATMAP_BASE_URL = "http://localhost:8000";
+
+function formatPercent(value?: number) {
+  if (value == null) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatNumber(value?: number) {
+  if (value == null) return "—";
+  return value.toFixed(3);
+}
+
+function getRiskTone(risk?: string) {
+  switch (risk?.toLowerCase()) {
+    case "low":
+      return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+    case "moderate":
+      return "bg-amber-50 text-amber-700 ring-1 ring-amber-100";
+    case "high":
+      return "bg-red-50 text-red-700 ring-1 ring-red-100";
+    default:
+      return "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200";
+  }
+}
+
+function getInputTone(accepted?: boolean) {
+  if (accepted === true) {
+    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+  }
+  if (accepted === false) {
+    return "bg-red-50 text-red-700 ring-1 ring-red-100";
+  }
+  return "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200";
+}
+
+export default function Home() {
+  const [file, setFile] = useState<File | null>(null);
+  const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const previewUrl = useMemo(() => {
+    if (!file) return "";
+    return URL.createObjectURL(file);
+  }, [file]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const heatmapUrl = useMemo(() => {
+    const rawPath = result?.explainability?.heatmap_path;
+    if (!rawPath) return "";
+    const normalized = rawPath.replace(/\\/g, "/");
+    const fileName = normalized.split("/").pop();
+    if (!fileName) return "";
+    return `${HEATMAP_BASE_URL}/heatmaps/${fileName}`;
+  }, [result]);
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0] ?? null;
+    setFile(selected);
+    setResult(null);
+    setError("");
+  };
+
+  const handleAnalyze = async () => {
+    if (!file) {
+      setError("Please choose an image first.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+      setResult(null);
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(BACKEND_URL, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.detail || "Request failed.");
+      }
+
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReset = () => {
+    setFile(null);
+    setResult(null);
+    setError("");
+  };
+
+  const warnings = [
+    ...(result?.policy?.warnings ?? []),
+    ...(result?.explainability?.warning ? [result.explainability.warning] : []),
+  ];
+
+  return (
+    <main
+      className="min-h-screen bg-[#FBF8F3] text-zinc-900"
+      style={{ fontFamily: '"Aptos","Aptos Body","Segoe UI",Arial,sans-serif' }}
+    >
+      <div className="mx-auto max-w-7xl px-6 py-6">
+        <nav className="mb-10 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-[0_8px_24px_rgba(0,0,0,0.04)] ring-1 ring-black/5">
+              <div className="relative h-4 w-7">
+                <span className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500" />
+                <span className="absolute right-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500" />
+                <span className="absolute left-1/2 top-1/2 h-[2px] w-4 -translate-x-1/2 -translate-y-1/2 bg-red-400" />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-400">
+                Research-use assistant
+              </p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight">MedAIx</h1>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-5 text-sm text-zinc-600">
+            <Link href="/" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+              <House size={16} />
+              Home
+            </Link>
+
+            <Link href="/workspace" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+              <LayoutDashboard size={16} />
+              Workspace
+            </Link>
+
+            <Link href="/about" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+              <CircleHelp size={16} />
+              About
+            </Link>
+
+            <Link href="/contact" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+              <Mail size={16} />
+              Contact
+            </Link>
+          </div>
+        </nav>
+
+        <section className="mb-14 grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+          <div>
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs text-zinc-600 shadow-[0_6px_20px_rgba(0,0,0,0.03)]">
+              <ShieldPlus size={15} className="text-red-500" />
+              Research-use image review assistant
+            </div>
+
+            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              A careful assistant for reviewing medical images.
+            </h2>
+
+            <p className="mt-5 max-w-2xl text-base leading-8 text-zinc-600">
+              Upload a supported medical image to receive a structured summary,
+              visual explanation, and a carefully framed next-step recommendation
+              for research use.
+            </p>
+
+            <div className="mt-8 flex gap-3">
+              <button
+                onClick={handleAnalyze}
+                disabled={loading}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-5 py-3 text-sm font-medium text-white shadow-[0_12px_28px_rgba(239,68,68,0.22)] transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? "Reviewing..." : "Start review"}
+                <ArrowRight size={16} />
+              </button>
+
+              <button
+                onClick={handleReset}
+                className="rounded-xl bg-white px-5 py-3 text-sm text-zinc-700 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section id="workspace" className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]">
+          <aside>
+            <h3 className="mb-4 text-base font-medium">Upload image</h3>
+
+            <label className="flex min-h-[210px] cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-zinc-300 bg-white p-6 text-center transition hover:border-red-300 hover:bg-red-50/20">
+              <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 ring-1 ring-red-100">
+                <div className="h-5 w-5 rounded-full bg-red-500" />
+              </div>
+              <span className="text-sm text-zinc-700">
+                Select a medical image to begin review
+              </span>
+              <span className="mt-2 text-xs text-zinc-500">
+                Supported formats depend on the current setup
+              </span>
+              <input
+                type="file"
+                accept=".png,.jpg,.jpeg"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </label>
+
+            <div className="mt-4 text-sm text-zinc-600">
+              <div className="flex items-center justify-between border-b border-zinc-200 py-3">
+                <span>File</span>
+                <span className="max-w-[150px] truncate text-right text-zinc-800">
+                  {file?.name || "No file selected"}
+                </span>
+              </div>
+            </div>
+
+            {previewUrl ? (
+              <div className="mt-4 overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
+                <img src={previewUrl} alt="Preview" className="h-auto w-full object-cover" />
+              </div>
+            ) : (
+              <div className="mt-4 flex h-64 items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-sm text-zinc-400">
+                Image preview
+              </div>
+            )}
+
+            {error ? (
+              <div className="mt-4 rounded-[18px] bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+                {error}
+              </div>
+            ) : null}
+          </aside>
+
+          <section>
+            <div className="mb-8 border-b border-zinc-200 pb-6">
+              <h3 className="text-3xl font-semibold tracking-tight">Review summary</h3>
+              <p className="mt-2 text-sm text-zinc-500">
+                A calm, structured summary for careful human review
+              </p>
+            </div>
+
+            {!result ? (
+              <div className="flex min-h-[280px] items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-zinc-400">
+                Begin review to see the guided summary
+              </div>
+            ) : (
+              <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_300px]">
+                <div>
+                  <div className="grid gap-6 border-b border-zinc-200 pb-6 md:grid-cols-[1fr_auto_auto] md:items-end">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Recommended next step
+                      </p>
+                      <p className="mt-3 text-[1.25rem] font-semibold leading-snug text-zinc-900">
+                        {result.policy?.action || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Risk level
+                      </p>
+                      <div className="mt-3">
+                        <span
+                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getRiskTone(
+                            result.policy?.risk_category
+                          )}`}
+                        >
+                          {result.policy?.risk_category || "—"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Image check
+                      </p>
+                      <div className="mt-3">
+                        <span
+                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getInputTone(
+                            result.input_gate?.accepted_for_analysis
+                          )}`}
+                        >
+                          {result.input_gate?.accepted_for_analysis === true
+                            ? "Accepted"
+                            : result.input_gate?.accepted_for_analysis === false
+                              ? "Rejected"
+                              : "—"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-10 border-t border-zinc-200 pt-6">
+                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Why this was suggested
+                    </p>
+                    <p className="mt-4 text-base leading-7 text-zinc-700">
+                      {result.policy?.reason || "—"}
+                    </p>
+                  </div>
+
+                  <div className="mt-10 grid gap-8 md:grid-cols-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Primary finding
+                      </p>
+                      <p className="mt-3 break-words text-[1.15rem] font-semibold leading-snug text-zinc-900">
+                        {result.inference?.top_label || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Confidence
+                      </p>
+                      <p className="mt-3 text-[1.15rem] font-semibold leading-snug text-zinc-900">
+                        {formatPercent(result.inference?.top_probability)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-10">
+                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Findings considered
+                    </p>
+                    <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
+                      {result.routing?.accepted_findings_set?.length ? (
+                        result.routing.accepted_findings_set.map((item: string) => (
+                          <div key={item} className="py-3 text-sm text-zinc-700">
+                            {item}
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-3 text-sm text-zinc-500">
+                          No findings listed for this review
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {warnings.length > 0 ? (
+                    <div className="mt-10 border-t border-zinc-200 pt-6">
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Things to review carefully
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {warnings.map((warning) => (
+                          <span
+                            key={warning}
+                            className="inline-flex items-center gap-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 ring-1 ring-red-100"
+                          >
+                            <AlertTriangle size={12} />
+                            {warning}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-10 border-t border-zinc-200 pt-6">
+                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Technical review details
+                    </p>
+                    <div className="mt-4 grid gap-6 text-sm leading-7 text-zinc-700 md:grid-cols-2">
+                      <div>
+                        <p>
+                          Accepted for review:{" "}
+                          {result.input_gate?.accepted_for_analysis === true
+                            ? "Yes"
+                            : result.input_gate?.accepted_for_analysis === false
+                              ? "No"
+                              : "—"}
+                        </p>
+                        <p>Input confidence: {formatPercent(result.input_gate?.confidence)}</p>
+                      </div>
+
+                      <div>
+                        <p>Detected region: {result.detection?.region || "—"}</p>
+                        <p>Detected modality: {result.detection?.modality || "—"}</p>
+                      </div>
+
+                      <div>
+                        <p>Detection confidence: {formatPercent(result.detection?.confidence)}</p>
+                        <p>
+                          Confirmation needed:{" "}
+                          {result.detection?.requires_confirmation ? "Yes" : "No"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p>Selected model: {result.routing?.selected_model || "—"}</p>
+                        <p>Review set size: {result.routing?.set_size ?? "—"}</p>
+                      </div>
+
+                      <div>
+                        <p>Distribution status: {result.ood?.tier || "—"}</p>
+                        <p>Screening score: {formatNumber(result.ood?.score)}</p>
+                      </div>
+
+                      <div>
+                        <p>Quality note: {result.quality?.reason || "—"}</p>
+                        <p>
+                          Re-upload suggested:{" "}
+                          {result.quality?.requires_reupload ? "Yes" : "No"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-10 border-t border-zinc-200 pt-6">
+                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Disclaimer
+                    </p>
+                    <p className="mt-4 text-sm leading-7 text-zinc-600">
+                      {result.disclaimer ||
+                        "This platform is intended solely for research and educational use. Outputs are non-diagnostic and must not be used for clinical decision-making."}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-4 text-xs uppercase tracking-[0.18em] text-zinc-400">
+                    Model focus map
+                  </p>
+
+                  {heatmapUrl ? (
+                    <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
+                      <img
+                        src={heatmapUrl}
+                        alt="Heatmap"
+                        className="h-auto w-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-zinc-400">
+                      Focus map unavailable
+                    </div>
+                  )}
+
+                  <div className="mt-4 text-sm text-zinc-600">
+                    <div className="flex items-center justify-between border-b border-zinc-200 py-3">
+                      <span>Explanation method</span>
+                      <span className="font-medium text-zinc-900">
+                        {result.explainability?.method || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        </section>
+      </div>
+
+      <footer id="contact" className="mt-16 border-t border-zinc-200 bg-[#F7F7F4]">
+        <div className="mx-auto grid max-w-7xl gap-10 px-6 py-10 md:grid-cols-3">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 text-zinc-900">
+              <ShieldPlus size={18} className="text-red-500" />
+              <span className="font-semibold">MedAIx</span>
+            </div>
+            <p className="text-sm leading-7 text-zinc-600">
+              A research-use assistant for careful, non-diagnostic medical image review.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="mb-3 text-sm font-semibold text-zinc-900">Quick links</h4>
+            <div className="space-y-2 text-sm text-zinc-600">
+              <Link href="/" className="inline-flex items-center gap-2 hover:text-zinc-900">
+                <House size={16} />
+                Home
+              </Link>
+              <br />
+              <Link href="/workspace" className="inline-flex items-center gap-2 hover:text-zinc-900">
+                <LayoutDashboard size={16} />
+                Workspace
+              </Link>
+              <br />
+              <Link href="/about" className="inline-flex items-center gap-2 hover:text-zinc-900">
+                <CircleHelp size={16} />
+                About
+              </Link>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="mb-3 text-sm font-semibold text-zinc-900">Contact</h4>
+            <div className="space-y-2 text-sm text-zinc-600">
+              <div className="inline-flex items-center gap-2">
+                <Mail size={16} />
+                research@medaix.ai
+              </div>
+              <br />
+              <div className="inline-flex items-center gap-2">
+                <Phone size={16} />
+                +00 000 000 0000
+              </div>
+              <br />
+              <div className="inline-flex items-center gap-2">
+                <MapPin size={16} />
+                Ankara, Türkiye
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-zinc-200 bg-white/70">
+          <div className="mx-auto max-w-7xl px-6 py-4">
+            <p className="text-xs leading-6 tracking-[0.01em] text-zinc-500">
+              <span className="font-semibold text-zinc-700">Important notice.</span>{" "}
+              This platform is intended only for research and educational use.
+              Outputs are non-diagnostic and must not be used for clinical decision-making.
+            </p>
+          </div>
+        </div>
+      </footer>
+    </main>
+  );
+}

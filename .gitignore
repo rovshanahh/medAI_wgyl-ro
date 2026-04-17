@@ -1,5 +1,25 @@
+# node
+node_modules/
+.next/
+dist/
+build/
+
+# python
 __pycache__/
 *.pyc
-logs/
-temp_uploads/
+.venv/
+venv/
+
+# env files
+.env
+.env.local
+
+# mac
 .DS_Store
+
+# logs
+*.log
+
+# uploads / temp
+tmp/
+temp/
