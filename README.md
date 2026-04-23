@@ -1,11 +1,13 @@
+Use this full clean README section.
+
 ## Current scope
 
-MedAIx is currently a research-use medical image routing and screening backend with a simple frontend.
+MedAIx is currently a research-use medical image routing and screening system with a backend and a frontend.
 
 ### What it currently does
 
 - accepts an uploaded image through the web interface
-- rejects clearly irrelevant inputs before analysis when possible
+- rejects many clearly irrelevant inputs before analysis
 - routes supported images into one of the currently supported pipelines:
   - chest X-ray
   - bone X-ray
@@ -37,7 +39,7 @@ MedAIx is currently a research-use medical image routing and screening backend w
 
 #### Brain MRI
 - accepted and detected as brain MRI
-- safely stopped at routing/registry level because no active brain MRI inference model is connected yet
+- safely stopped at routing and registry level because no active brain MRI inference model is connected yet
 
 #### Irrelevant images
 - intended to be rejected before model inference through top-level gating
@@ -62,3 +64,38 @@ MedAIx is currently a research-use medical image routing and screening backend w
 - chest X-ray inference: active
 - bone X-ray inference: active
 - brain MRI inference: not yet connected
+
+## Run the project
+
+### Backend
+
+From the backend folder:
+
+```bash
+pip install -r requirements.txt
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+The backend will run at:
+
+http://localhost:8000
+
+Frontend
+
+From the frontend folder:
+
+npm install
+npm run dev
+
+The frontend will run at:
+
+http://localhost:3000
+
+Notes
+	•	make sure the backend is running before using the frontend
+	•	the frontend currently sends requests to http://localhost:8000/analyze
+	•	chest heatmaps are served from the backend and displayed in the frontend when available
+
+Important
+
+This project is for research use only and must not be used for clinical decision-making.
+
