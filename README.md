@@ -1,5 +1,3 @@
-Use this full clean README section.
-
 ## Current scope
 
 MedAIx is currently a research-use medical image routing and screening system with a backend and a frontend.
