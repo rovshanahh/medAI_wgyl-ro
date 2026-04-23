@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import uuid4
 
 
 class TempFileManager:
@@ -8,6 +9,7 @@ class TempFileManager:
 
     def save_upload(self, filename: str, content: bytes) -> str:
         safe_name = Path(filename).name
-        output_path = self.base_dir / safe_name
+        unique_name = f"{uuid4().hex}_{safe_name}"
+        output_path = self.base_dir / unique_name
         output_path.write_bytes(content)
         return str(output_path)

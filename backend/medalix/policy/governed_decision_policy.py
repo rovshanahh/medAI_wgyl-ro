@@ -27,21 +27,18 @@ class GovernedDecisionPolicy:
         routing_result: dict,
         inference_result: dict,
     ) -> str:
-        if ood_result.get("tier") == "HARD_OOD":
+        if ood_result.get("tier") in {"HARD_OOD", "NEAR_OOD"}:
             return "HIGH"
 
-        if ood_result.get("tier") == "NEAR_OOD":
-            return "HIGH"
-
-        set_size = routing_result.get("set_size", 0)
+        set_size = int(routing_result.get("set_size", 0) or 0)
 
         epi_dict = inference_result.get("epistemic_uncertainty", {})
         avg_epi = 0.0
         if epi_dict:
-            avg_epi = sum(epi_dict.values()) / len(epi_dict)
+            avg_epi = sum(float(v) for v in epi_dict.values()) / len(epi_dict)
 
-        moderate_set_size = self._config.get("moderate_set_size", 3)
-        high_set_size = self._config.get("high_set_size", 5)
+        moderate_set_size = self._config.get("moderate_set_size", 2)
+        high_set_size = self._config.get("high_set_size", 3)
         moderate_epistemic = self._config.get("moderate_epistemic_threshold", 0.003)
         high_epistemic = self._config.get("high_epistemic_threshold", 0.01)
 
@@ -87,18 +84,21 @@ class GovernedDecisionPolicy:
             inference_result=inference_result,
         )
 
-        answer_threshold = self._config.get("answer_threshold", 0.70)
-        refusal_threshold = self._config.get("refusal_threshold", 0.80)
-        escalation_threshold = self._config.get("escalation_threshold", 0.90)
+        answer_threshold = float(self._config.get("answer_threshold", 0.70))
+        refusal_threshold = float(self._config.get("refusal_threshold", 0.80))
+        escalation_threshold = float(self._config.get("escalation_threshold", 0.90))
+        refuse_epistemic_threshold = float(
+            self._config.get("refuse_epistemic_threshold", 0.02)
+        )
 
-        top_prob = inference_result.get("top_probability", 0.0)
-        reliability_score = inference_result.get("reliability_score", 0.0)
-        disagreement_score = inference_result.get("disagreement_score", 0.0)
+        top_prob = float(inference_result.get("top_probability", 0.0) or 0.0)
+        reliability_score = float(inference_result.get("reliability_score", 0.0) or 0.0)
+        disagreement_score = float(inference_result.get("disagreement_score", 0.0) or 0.0)
 
         epi_dict = inference_result.get("epistemic_uncertainty", {})
         avg_epi = 0.0
         if epi_dict:
-            avg_epi = sum(epi_dict.values()) / len(epi_dict)
+            avg_epi = sum(float(v) for v in epi_dict.values()) / len(epi_dict)
 
         if ood_result.get("is_hard_ood", False):
             action = "STOP"
@@ -112,7 +112,7 @@ class GovernedDecisionPolicy:
 
         if ood_result.get("tier") == "NEAR_OOD":
             action = "STOP"
-            reason = "Unrelated or out-of-distribution image detected"
+            reason = "Near-OOD input detected"
             return PolicyOutput(
                 action=action,
                 reason=reason,
@@ -126,8 +126,8 @@ class GovernedDecisionPolicy:
             return PolicyOutput(
                 action=action,
                 reason=reason,
-                risk_category=risk_category,
-                warnings=self.build_warnings(action, risk_category),
+                risk_category=self._max_risk(risk_category, "MODERATE"),
+                warnings=self.build_warnings(action, self._max_risk(risk_category, "MODERATE")),
             )
 
         if routing_result.get("requires_confirmation", False):
@@ -136,8 +136,8 @@ class GovernedDecisionPolicy:
             return PolicyOutput(
                 action=action,
                 reason=reason,
-                risk_category=risk_category,
-                warnings=self.build_warnings(action, risk_category),
+                risk_category=self._max_risk(risk_category, "MODERATE"),
+                warnings=self.build_warnings(action, self._max_risk(risk_category, "MODERATE")),
             )
 
         if disagreement_score >= escalation_threshold:
@@ -161,16 +161,14 @@ class GovernedDecisionPolicy:
                 warnings=self.build_warnings(action, elevated_risk),
             )
 
-        if top_prob < answer_threshold and avg_epi > self._config.get(
-            "refuse_epistemic_threshold", 0.02
-        ):
+        if top_prob < answer_threshold and avg_epi > refuse_epistemic_threshold:
             action = "REFUSE"
             reason = "Prediction not reliable enough to answer safely"
             return PolicyOutput(
                 action=action,
                 reason=reason,
-                risk_category=risk_category,
-                warnings=self.build_warnings(action, risk_category),
+                risk_category=self._max_risk(risk_category, "MODERATE"),
+                warnings=self.build_warnings(action, self._max_risk(risk_category, "MODERATE")),
             )
 
         action = "ANSWER"

@@ -5,8 +5,11 @@ from torchvision import transforms
 
 
 class PreprocessingPipeline:
+    XRAY_MODALITIES = {"xray", "mammography"}
+    RGB_MODALITIES = {"dermoscopy", "fundus"}
+
     def __init__(self):
-        self.transform = transforms.Compose(
+        self._xray_transform = transforms.Compose(
             [
                 transforms.Resize((224, 224)),
                 transforms.Grayscale(num_output_channels=3),
@@ -18,13 +21,48 @@ class PreprocessingPipeline:
             ]
         )
 
-    def run(self, raw_bytes: bytes):
+        self._rgb_transform = transforms.Compose(
+            [
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225],
+                ),
+            ]
+        )
+
+    def _decode_image(self, raw_bytes: bytes) -> Image.Image:
         try:
             image = Image.open(BytesIO(raw_bytes))
             image.load()
+            return ImageOps.exif_transpose(image)
         except Exception as exc:
             raise ValueError(f"Failed to decode uploaded image: {str(exc)}") from exc
 
-        image = ImageOps.exif_transpose(image).convert("L")
-        tensor = self.transform(image).unsqueeze(0)
-        return image, tensor
+    def _select_profile(self, modality: str | None) -> str:
+        modality = (modality or "").lower()
+
+        if modality in self.XRAY_MODALITIES:
+            return "xray_2d"
+
+        if modality in self.RGB_MODALITIES:
+            return "rgb_2d"
+
+        if modality in {"ct", "mri"}:
+            return "grayscale_2d"
+
+        return "rgb_2d"
+
+    def run(self, raw_bytes: bytes, modality: str | None = None):
+        image = self._decode_image(raw_bytes)
+        profile = self._select_profile(modality)
+
+        if profile in {"xray_2d", "grayscale_2d"}:
+            processed_image = image.convert("L")
+            tensor = self._xray_transform(processed_image).unsqueeze(0)
+            return processed_image, tensor
+
+        processed_image = image.convert("RGB")
+        tensor = self._rgb_transform(processed_image).unsqueeze(0)
+        return processed_image, tensor

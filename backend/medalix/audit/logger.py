@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -12,10 +12,10 @@ class Logger:
         record = {
             "timestamp": datetime.now(UTC).isoformat(),
             "level": level,
-            **event,
+            **(event or {}),
         }
         with self.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def info(self, event: dict) -> None:
         self._write("INFO", event)

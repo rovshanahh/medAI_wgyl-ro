@@ -18,8 +18,23 @@ class ModelMetadata:
     def is_active(self) -> bool:
         return self.status.upper() == "ACTIVE"
 
+    def is_inactive(self) -> bool:
+        return self.status.upper() == "INACTIVE"
+
+    def is_blocked(self) -> bool:
+        return self.status.upper() in {"BLOCKED", "DEPRECATED"}
+
     def supports_shape(self, shape: tuple[int, ...]) -> bool:
         return tuple(shape) == tuple(self.input_shape)
 
     def has_ensemble(self) -> bool:
         return len(self.ensemble_members) >= 3
+
+    def normalized_region(self) -> str:
+        return self.region.strip().lower()
+
+    def normalized_modality(self) -> str:
+        return self.modality.strip().lower()
+
+    def normalized_architecture(self) -> str:
+        return self.architecture.strip().lower()

@@ -2,11 +2,12 @@ from pathlib import Path
 
 from medalix.audit.audit_trace_builder import AuditTraceBuilder
 from medalix.audit.logger import Logger
-from medalix.detection.conformal_router import ConformalRouter
-from medalix.detection.region_modality_detector import RegionModalityDetector
 from medalix.explainability.explainability_engine import ExplainabilityEngine
+from medalix.ingestion.bone_xray_input_gate import BoneXrayInputGate
+from medalix.ingestion.brain_mri_input_gate import BrainMriInputGate
 from medalix.ingestion.chest_xray_input_gate import ChestXrayInputGate
 from medalix.ingestion.ingestion_validator import IngestionValidator
+from medalix.ingestion.medical_xray_input_gate import MedicalXrayInputGate
 from medalix.inference.ensemble_model import EnsembleModel
 from medalix.ood.ood_detector import OODDetector
 from medalix.policy.governed_decision_policy import GovernedDecisionPolicy
@@ -45,6 +46,11 @@ class Orchestrator:
         self.model_registry = ModelRegistry(str(registry_path))
         self.model_router = ModelRouter(self.model_registry)
 
+        self.medical_gate = MedicalXrayInputGate()
+        self.chest_gate = ChestXrayInputGate()
+        self.bone_gate = BoneXrayInputGate()
+        self.brain_gate = BrainMriInputGate()
+
     def get_result(self, analysis_id: str) -> dict | None:
         result = self.session_store.get_result(analysis_id)
         if result is None:
@@ -58,17 +64,23 @@ class Orchestrator:
         self.logger.info({"event": "result_stored", "analysis_id": state.analysis_id})
         return payload
 
-    def _build_input_gate_result(self, input_gate_result: dict | None = None) -> dict:
-        input_gate_result = input_gate_result or {}
-        hard_reject = input_gate_result.get("hard_reject", False)
+    def _build_input_gate_result(self, route_decision: dict | None = None) -> dict:
+        route_decision = route_decision or {}
+        hard_reject = route_decision.get("hard_reject", False)
         return {
             "accepted_for_analysis": not hard_reject,
-            "confidence": input_gate_result.get("confidence"),
+            "confidence": route_decision.get("confidence"),
             "message": (
-                "Input accepted by the active workflow."
-                if not hard_reject
-                else "Input rejected by the active workflow."
+                route_decision.get("message")
+                or (
+                    "Input accepted by the active workflow."
+                    if not hard_reject
+                    else "Input rejected by the active workflow."
+                )
             ),
+            "selected_route": route_decision.get("selected_route"),
+            "route_scores": route_decision.get("route_scores", {}),
+            "top_level_gate": route_decision.get("top_level_gate", {}),
         }
 
     def _build_detection_result(self, raw_detection_result: dict | None = None) -> dict:
@@ -80,6 +92,8 @@ class Orchestrator:
             "requires_confirmation": bool(
                 raw_detection_result.get("requires_confirmation", False)
             ),
+            "supported": bool(raw_detection_result.get("supported", False)),
+            "reason": raw_detection_result.get("reason"),
         }
 
     def _build_routing_result(
@@ -126,10 +140,7 @@ class Orchestrator:
             "reason": ood_result.get("reason"),
         }
 
-    def _build_explainability_result(
-        self,
-        explainability_result: dict | None = None,
-    ) -> dict:
+    def _build_explainability_result(self, explainability_result: dict | None = None) -> dict:
         explainability_result = explainability_result or {}
         return {
             "method": explainability_result.get("method"),
@@ -193,6 +204,151 @@ class Orchestrator:
             pipeline_stages=state.stage_history,
         )
 
+    def _select_route(self, filename: str, content: bytes) -> dict:
+        brain_result = self.brain_gate.evaluate(content)
+        brain_conf = float(brain_result.get("confidence", 0.0) or 0.0)
+        brain_is_brain = bool(brain_result.get("is_brain_mri_like", False))
+
+        xray_result = self.medical_gate.evaluate(content)
+        xray_conf = float(xray_result.get("confidence", 0.0) or 0.0)
+        xray_is_medical = bool(xray_result.get("is_medical_xray_like", False))
+        xray_hard_reject = bool(xray_result.get("hard_reject", False))
+
+        chest_result = self.chest_gate.evaluate(content)
+        bone_result = self.bone_gate.evaluate(content, filename=filename)
+
+        chest_conf = float(chest_result.get("confidence", 0.0) or 0.0)
+        bone_conf = float(bone_result.get("confidence", 0.0) or 0.0)
+
+        chest_is_chest = bool(chest_result.get("is_chest_xray_like", False))
+        chest_hard_reject = bool(chest_result.get("hard_reject", False))
+        bone_is_bone = bool(bone_result.get("is_bone_xray_like", False))
+
+        route_scores = {
+            "brain_mri": brain_conf,
+            "medical_xray_gate": xray_conf,
+            "chest_xray": chest_conf,
+            "bone_xray": bone_conf,
+        }
+
+        if brain_is_brain and brain_conf >= 0.80 and brain_conf >= xray_conf:
+            return {
+                "hard_reject": False,
+                "confidence": brain_conf,
+                "selected_route": "brain_mri",
+                "route_scores": route_scores,
+                "top_level_gate": {
+                    "brain_mri_gate": brain_result,
+                    "medical_xray_gate": xray_result,
+                },
+                "message": "Routed to brain MRI pipeline.",
+            }
+
+        if xray_hard_reject and not brain_is_brain:
+            return {
+                "hard_reject": True,
+                "confidence": max(brain_conf, xray_conf),
+                "selected_route": None,
+                "route_scores": route_scores,
+                "top_level_gate": {
+                    "brain_mri_gate": brain_result,
+                    "medical_xray_gate": xray_result,
+                },
+                "message": "Input rejected by top-level medical image gates.",
+            }
+
+        if xray_is_medical:
+            if chest_is_chest and chest_conf >= 0.80:
+                return {
+                    "hard_reject": False,
+                    "confidence": chest_conf,
+                    "selected_route": "chest_xray",
+                    "route_scores": route_scores,
+                    "top_level_gate": {
+                        "brain_mri_gate": brain_result,
+                        "medical_xray_gate": xray_result,
+                    },
+                    "message": "Routed to chest X-ray pipeline.",
+                }
+
+            if bone_is_bone and bone_conf >= 0.80:
+                return {
+                    "hard_reject": False,
+                    "confidence": bone_conf,
+                    "selected_route": "bone_xray",
+                    "route_scores": route_scores,
+                    "top_level_gate": {
+                        "brain_mri_gate": brain_result,
+                        "medical_xray_gate": xray_result,
+                    },
+                    "message": "Routed to bone X-ray pipeline.",
+                }
+
+            if chest_hard_reject and bone_is_bone and bone_conf >= 0.60:
+                return {
+                    "hard_reject": False,
+                    "confidence": bone_conf,
+                    "selected_route": "bone_xray",
+                    "route_scores": route_scores,
+                    "top_level_gate": {
+                        "brain_mri_gate": brain_result,
+                        "medical_xray_gate": xray_result,
+                    },
+                    "message": "Routed to bone X-ray pipeline after chest rejection.",
+                }
+
+        return {
+            "hard_reject": True,
+            "confidence": max(brain_conf, xray_conf, chest_conf, bone_conf),
+            "selected_route": None,
+            "route_scores": route_scores,
+            "top_level_gate": {
+                "brain_mri_gate": brain_result,
+                "medical_xray_gate": xray_result,
+            },
+            "message": "Could not safely route input to brain MRI, chest X-ray, or bone X-ray pipeline.",
+        }
+
+    def _route_to_detection(self, selected_route: str | None, confidence: float) -> dict:
+        if selected_route == "chest_xray":
+            return {
+                "region": "chest",
+                "modality": "xray",
+                "confidence": confidence,
+                "requires_confirmation": False,
+                "supported": True,
+                "reason": "Chest X-ray route selected by medical image dispatcher.",
+            }
+
+        if selected_route == "bone_xray":
+            return {
+                "region": "bone",
+                "modality": "xray",
+                "confidence": confidence,
+                "requires_confirmation": False,
+                "supported": True,
+                "reason": "Bone X-ray route selected by medical image dispatcher.",
+            }
+
+        if selected_route == "brain_mri":
+            return {
+                "region": "brain",
+                "modality": "mri",
+                "confidence": confidence,
+                "requires_confirmation": False,
+                "supported": True,
+                "reason": "Brain MRI route selected by medical image dispatcher.",
+            }
+
+        return {
+            "region": None,
+            "modality": None,
+            "confidence": confidence,
+            "requires_confirmation": True,
+            "supported": False,
+            "reason": "No valid medical image route selected.",
+        }
+
     def execute(self, filename: str, content_type: str | None, content: bytes) -> dict:
         state = PipelineState(
             analysis_id=self.session_store.create_analysis_id(),
@@ -210,8 +366,7 @@ class Orchestrator:
             validator.validate(filename, content_type, content)
 
             state.set_stage("input_gate")
-            input_gate = ChestXrayInputGate()
-            raw_input_gate_result = input_gate.evaluate(content)
+            raw_input_gate_result = self._select_route(filename=filename, content=content)
             state.input_gate_result = self._build_input_gate_result(raw_input_gate_result)
 
             if raw_input_gate_result.get("hard_reject", False):
@@ -222,7 +377,7 @@ class Orchestrator:
                 state.explainability_result = {}
                 state.policy_result = self._build_policy_result(
                     action="STOP",
-                    reason="Input was rejected by the active workflow before inference.",
+                    reason=raw_input_gate_result.get("message", "Input rejected by route selector."),
                     risk_category="HIGH",
                     warnings=["Input not accepted for analysis"],
                 )
@@ -255,9 +410,15 @@ class Orchestrator:
                     },
                 )
 
+            selected_route = raw_input_gate_result.get("selected_route")
+
             state.set_stage("preprocessing")
             preprocessor = PreprocessingPipeline()
-            state.original_image, state.tensor = preprocessor.run(content)
+            modality_for_preprocessing = "mri" if selected_route == "brain_mri" else "xray"
+            state.original_image, state.tensor = preprocessor.run(
+                content,
+                modality=modality_for_preprocessing,
+            )
 
             state.set_stage("quality")
             quality_assessor = QualityAssessor()
@@ -265,30 +426,51 @@ class Orchestrator:
             state.quality_result = self._build_quality_result(raw_quality_result)
 
             state.set_stage("detection")
-            detector = RegionModalityDetector()
-            raw_detection_result = detector.predict(raw_input_gate_result)
+            raw_detection_result = self._route_to_detection(
+                selected_route=selected_route,
+                confidence=float(raw_input_gate_result.get("confidence", 0.0) or 0.0),
+            )
             state.detection_result = self._build_detection_result(raw_detection_result)
 
             state.set_stage("routing")
-            conformal_router = ConformalRouter()
-            raw_routing_result = conformal_router.decide(raw_detection_result)
+            route_name = f"{state.detection_result['region']}:{state.detection_result['modality']}"
+            raw_routing_result = {
+                "accepted_findings_set": [route_name],
+                "set_size": 1,
+                "requires_confirmation": False,
+                "alpha": 0.0,
+                "threshold": 0.0,
+                "top_probability": state.detection_result["confidence"],
+                "nonconformity": 1.0 - float(state.detection_result["confidence"] or 0.0),
+                "routing_candidates": [route_name],
+                "selected_model": None,
+            }
+            state.routing_result = self._build_routing_result(raw_routing_result)
 
-            if raw_routing_result.get("requires_confirmation", False):
-                state.routing_result = self._build_routing_result(raw_routing_result)
+            state.set_stage("registry")
+            try:
+                selected_model_metadata = self.model_router.resolve(
+                    region=state.detection_result["region"],
+                    modality=state.detection_result["modality"],
+                    input_shape=tuple(state.tensor.shape),
+                )
+            except ValueError as exc:
                 state.ood_result = {}
                 state.explainability_result = {}
                 state.policy_result = self._build_policy_result(
-                    action="REQUEST_EVIDENCE",
-                    reason="Multiple routing candidates found. Manual confirmation required.",
-                    risk_category="MODERATE",
-                    warnings=["Automatic routing suspended"],
+                    action="STOP",
+                    reason=str(exc),
+                    risk_category="HIGH",
+                    warnings=["Route is known but no active compatible model is available"],
                 )
                 state.trace = self._build_trace(state)
-                self.logger.info(
+                self.logger.warn(
                     {
-                        "event": "analysis_completed",
+                        "event": "registry_resolution_blocked",
                         "analysis_id": state.analysis_id,
-                        "trace": state.trace.to_dict(),
+                        "filename": state.filename,
+                        "stage": state.current_stage,
+                        "message": str(exc),
                     }
                 )
                 return self._finalize_and_store(
@@ -308,16 +490,10 @@ class Orchestrator:
                         "policy": state.policy_result,
                         "warnings": state.warnings,
                         "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
-                        "message": "Manual confirmation required before inference",
+                        "message": "Analysis stopped because the routed model is not available yet",
                     },
                 )
 
-            state.set_stage("registry")
-            selected_model_metadata = self.model_router.resolve(
-                region=state.detection_result["region"],
-                modality=state.detection_result["modality"],
-                input_shape=tuple(state.tensor.shape),
-            )
             state.selected_model = selected_model_metadata
             state.routing_result = self._build_routing_result(
                 raw_routing_result=raw_routing_result,
@@ -349,46 +525,20 @@ class Orchestrator:
                 )
 
             state.set_stage("ood")
-            ood_detector = OODDetector()
-            raw_ood_result = ood_detector.evaluate(state.tensor, raw_inference_result)
+            if state.detection_result.get("region") in {"bone", "brain"}:
+                raw_ood_result = {
+                    "score": 0.0,
+                    "tier": "IN_DISTRIBUTION",
+                    "is_hard_ood": False,
+                    "reason": (
+                        f"{state.detection_result.get('region', 'Route').title()} route "
+                        "currently bypasses OOD until route-specific feature stats are available."
+                    ),
+                }
+            else:
+                ood_detector = OODDetector()
+                raw_ood_result = ood_detector.evaluate(state.tensor, raw_inference_result)
             state.ood_result = self._build_ood_result(raw_ood_result)
-
-            if state.ood_result.get("is_hard_ood", False):
-                state.explainability_result = {}
-                state.policy_result = self._build_policy_result(
-                    action="STOP",
-                    reason="Hard OOD input detected after feature evaluation.",
-                    risk_category="HIGH",
-                    warnings=["Input is out of supported distribution"],
-                )
-                state.trace = self._build_trace(state)
-                self.logger.info(
-                    {
-                        "event": "analysis_completed",
-                        "analysis_id": state.analysis_id,
-                        "trace": state.trace.to_dict(),
-                    }
-                )
-                return self._finalize_and_store(
-                    state,
-                    {
-                        "analysis_id": state.analysis_id,
-                        "filename": state.filename,
-                        "content_type": state.content_type,
-                        "size_bytes": state.size_bytes,
-                        "input_gate": state.input_gate_result,
-                        "detection": state.detection_result,
-                        "routing": state.routing_result,
-                        "quality": state.quality_result,
-                        "ood": state.ood_result,
-                        "explainability": state.explainability_result,
-                        "selected_model": self._selected_model_payload(state.selected_model),
-                        "policy": state.policy_result,
-                        "warnings": state.warnings,
-                        "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
-                        "message": "Analysis stopped due to OOD detection",
-                    },
-                )
 
             state.set_stage("explainability")
             try:

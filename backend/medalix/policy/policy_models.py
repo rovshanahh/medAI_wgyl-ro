@@ -34,6 +34,14 @@ class PolicyInput:
             )
         )
 
+    def to_dict(self) -> dict:
+        return {
+            "ood_result": dict(self.ood_result or {}),
+            "routing_result": dict(self.routing_result or {}),
+            "inference_result": dict(self.inference_result or {}),
+            "quality_result": dict(self.quality_result or {}),
+        }
+
 
 @dataclass(frozen=True)
 class PolicyOutput:
@@ -58,6 +66,12 @@ class PolicyOutput:
 
         if self.warnings is None:
             object.__setattr__(self, "warnings", [])
+        else:
+            object.__setattr__(
+                self,
+                "warnings",
+                [str(w).strip() for w in self.warnings if str(w).strip()],
+            )
 
     def is_terminal(self) -> bool:
         return self.action in {"ANSWER", "REFUSE", "ESCALATE", "STOP"}

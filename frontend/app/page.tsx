@@ -118,10 +118,12 @@ export default function Home() {
   const heatmapUrl = useMemo(() => {
     const rawPath = result?.explainability?.heatmap_path;
     if (!rawPath) return "";
-    const normalized = rawPath.replace(/\\/g, "/");
-    const fileName = normalized.split("/").pop();
-    if (!fileName) return "";
-    return `${HEATMAP_BASE_URL}/heatmaps/${fileName}`;
+  
+    if (rawPath.startsWith("http://") || rawPath.startsWith("https://")) {
+      return rawPath;
+    }
+  
+    return `${HEATMAP_BASE_URL}${rawPath}`;
   }, [result]);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {

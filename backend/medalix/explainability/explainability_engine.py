@@ -36,12 +36,15 @@ class ExplainabilityEngine:
         if not target_layers:
             raise ValueError("No valid target layer found for explainability generation")
 
-        rgb_image = original_image.convert("RGB").resize((224, 224))
+        input_height = int(tensor.shape[-2])
+        input_width = int(tensor.shape[-1])
+
+        rgb_image = original_image.convert("RGB").resize((input_width, input_height))
         rgb_array = np.array(rgb_image).astype(np.float32) / 255.0
 
         cam = GradCAMPlusPlus(model=self.model, target_layers=target_layers)
-
         grayscale_cam = cam(input_tensor=tensor)[0]
+
         visualization = show_cam_on_image(
             rgb_array,
             grayscale_cam,
@@ -50,7 +53,8 @@ class ExplainabilityEngine:
         )
 
         safe_name = Path(filename).stem.replace(" ", "_")
-        heatmap_path = self.output_dir / f"{safe_name}_gradcampp.png"
+        heatmap_filename = f"{safe_name}_gradcampp.png"
+        heatmap_path = self.output_dir / heatmap_filename
 
         plt.figure(figsize=(6, 6))
         plt.imshow(visualization)
@@ -60,7 +64,7 @@ class ExplainabilityEngine:
 
         return {
             "method": "Grad-CAM++",
-            "heatmap_path": str(heatmap_path),
+            "heatmap_path": f"/heatmaps/{heatmap_filename}",
             "warning": "",
         }
 

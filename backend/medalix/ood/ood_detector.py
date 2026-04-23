@@ -8,8 +8,8 @@ class OODDetector:
         stats = json.loads(Path(stats_path).read_text(encoding="utf-8"))
         self.mean_vector = stats["mean_vector"]
         self.std_vector = stats["std_vector"]
-        self.hard_ood_threshold = stats.get("hard_ood_threshold", 120.0)
-        self.near_ood_threshold = stats.get("near_ood_threshold", 80.0)
+        self.hard_ood_threshold = float(stats.get("hard_ood_threshold", 120.0))
+        self.near_ood_threshold = float(stats.get("near_ood_threshold", 80.0))
 
     def evaluate(self, tensor, inference_result: dict | None = None) -> dict:
         inference_result = inference_result or {}
@@ -31,12 +31,11 @@ class OODDetector:
                 "reason": "Feature vector shape does not match reference statistics",
             }
 
-        dist = math.sqrt(
-            sum(
-                ((f - m) / max(s, 1e-6)) ** 2
-                for f, m, s in zip(features, self.mean_vector, self.std_vector)
-            )
+        normalized_squared_distance = sum(
+            ((float(f) - float(m)) / max(float(s), 1e-6)) ** 2
+            for f, m, s in zip(features, self.mean_vector, self.std_vector)
         )
+        dist = math.sqrt(normalized_squared_distance)
 
         if dist > self.hard_ood_threshold:
             return {

@@ -8,11 +8,13 @@ class QualityAssessor:
         noise_threshold: float = 0.35,
         min_dynamic_range: float = 0.05,
         min_foreground_fraction: float = 0.02,
+        max_artifact_score: float = 0.25,
     ) -> None:
         self.blur_threshold = blur_threshold
         self.noise_threshold = noise_threshold
         self.min_dynamic_range = min_dynamic_range
         self.min_foreground_fraction = min_foreground_fraction
+        self.max_artifact_score = max_artifact_score
 
     def assess(self, tensor) -> dict:
         if tensor is None:
@@ -85,7 +87,7 @@ class QualityAssessor:
             warnings.append("Image may be incomplete or mostly empty")
             reasons.append("Foreground fraction below threshold")
 
-        if artifact_score > 0.25:
+        if artifact_score > self.max_artifact_score:
             warnings.append("Potential artifact severity detected")
             reasons.append("Artifact score above threshold")
 
@@ -182,4 +184,4 @@ class QualityAssessor:
 
     def _check_orientation(self, tensor: torch.Tensor) -> bool:
         _, _, height, width = tensor.shape
-        return height > 0 and width > 0
+        return height > 0 and width > 0 and height <= width * 4 and width <= height * 4
