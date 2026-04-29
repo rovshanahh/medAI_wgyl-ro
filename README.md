@@ -182,8 +182,6 @@ Gular Haji-Hasanli — Software Engineering, TED University
 Rovshana Haji-Hasanli — Software Engineering, TED University
 Arya Tabiyehzad — Computer Engineering, TED University
 
-Supervisor: Prof. Dr. Tansel Dokeroğlu
-
 ---
 
 ## Important
