@@ -69,9 +69,14 @@ class ExplainabilityEngine:
         }
 
     def _resolve_target_layers(self):
+        # DenseNet121 — chest and bone models
         if hasattr(self.model, "densenet") and hasattr(self.model.densenet, "features"):
             features = self.model.densenet.features
             if len(features) > 0:
                 return [features[-1]]
+
+        # ResNet18 — brain MRI model
+        if hasattr(self.model, "resnet") and hasattr(self.model.resnet, "layer4"):
+            return [self.model.resnet.layer4[-1]]
 
         raise ValueError("Unsupported model structure for Grad-CAM++ target layer resolution")

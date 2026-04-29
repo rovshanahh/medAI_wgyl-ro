@@ -49,7 +49,17 @@ class Orchestrator:
         self.medical_gate = MedicalXrayInputGate()
         self.chest_gate = ChestXrayInputGate()
         self.bone_gate = BoneXrayInputGate()
-        self.brain_gate = BrainMriInputGate()
+
+        # Brain gate is optional until the model is trained
+        try:
+            self.brain_gate = BrainMriInputGate()
+        except FileNotFoundError:
+            self.brain_gate = None
+            print(
+                "WARNING: Brain MRI gate model not found at "
+                "reference_data/input_gate/brain_mri_input_gate_model.pth — "
+                "brain route is disabled until the model is trained."
+            )
 
     def get_result(self, analysis_id: str) -> dict | None:
         result = self.session_store.get_result(analysis_id)
@@ -205,9 +215,15 @@ class Orchestrator:
         )
 
     def _select_route(self, filename: str, content: bytes) -> dict:
-        brain_result = self.brain_gate.evaluate(content)
-        brain_conf = float(brain_result.get("confidence", 0.0) or 0.0)
-        brain_is_brain = bool(brain_result.get("is_brain_mri_like", False))
+        # Brain gate — only run if the model is available
+        if self.brain_gate is not None:
+            brain_result = self.brain_gate.evaluate(content)
+            brain_conf = float(brain_result.get("confidence", 0.0) or 0.0)
+            brain_is_brain = bool(brain_result.get("is_brain_mri_like", False))
+        else:
+            brain_result = {}
+            brain_conf = 0.0
+            brain_is_brain = False
 
         xray_result = self.medical_gate.evaluate(content)
         xray_conf = float(xray_result.get("confidence", 0.0) or 0.0)
@@ -231,7 +247,8 @@ class Orchestrator:
             "bone_xray": bone_conf,
         }
 
-        if brain_is_brain and brain_conf >= 0.80 and brain_conf >= xray_conf:
+        # Brain route — only available when gate model is loaded
+        if self.brain_gate is not None and brain_is_brain and brain_conf >= 0.80 and brain_conf >= xray_conf:
             return {
                 "hard_reject": False,
                 "confidence": brain_conf,

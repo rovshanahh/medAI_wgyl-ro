@@ -9,9 +9,21 @@ from medalix.ood.ood_detector import OODDetector
 from medalix.detection.conformal_router import ConformalRouter
 from medalix.policy.governed_decision_policy import GovernedDecisionPolicy
 from medalix.policy.policy_models import PolicyInput
+from medalix.registry.model_registry import ModelRegistry
+from medalix.registry.model_router import ModelRouter
 
 
-def evaluate_one(image_path: Path, expected_group: str):
+def get_chest_model_metadata():
+    registry = ModelRegistry("reference_data/model_registry.json")
+    router = ModelRouter(registry)
+    return router.resolve(
+        region="chest",
+        modality="xray",
+        input_shape=(1, 3, 224, 224),
+    )
+
+
+def evaluate_one(image_path: Path, expected_group: str, model_metadata):
     raw_bytes = image_path.read_bytes()
 
     input_gate = ChestXrayInputGate()
@@ -32,7 +44,7 @@ def evaluate_one(image_path: Path, expected_group: str):
     preprocessor = PreprocessingPipeline()
     _, tensor = preprocessor.run(raw_bytes)
 
-    model = EnsembleModel()
+    model = EnsembleModel(model_metadata=model_metadata)
     inference_result = model.predict(tensor)
 
     quality_assessor = QualityAssessor()
@@ -42,7 +54,14 @@ def evaluate_one(image_path: Path, expected_group: str):
     ood_result = ood_detector.evaluate(tensor, inference_result)
 
     conformal_router = ConformalRouter()
-    routing_result = conformal_router.decide(inference_result)
+    detection_result = {
+        "region": "chest",
+        "modality": "xray",
+        "confidence": input_gate_result["confidence"],
+        "supported": True,
+        "requires_confirmation": False,
+    }
+    routing_result = conformal_router.decide(detection_result)
 
     policy_input = PolicyInput(
         ood_result=ood_result,
@@ -71,17 +90,27 @@ def main():
     chest_dir = eval_root / "chest_xray"
     nonchest_dir = eval_root / "not_chest_xray"
 
+    print("Loading chest model metadata from registry...")
+    model_metadata = get_chest_model_metadata()
+    print(f"Model: {model_metadata.model_id} v{model_metadata.version}")
+
     results = []
 
+    print(f"\nEvaluating chest X-rays from {chest_dir}...")
     for image_path in sorted(chest_dir.iterdir()):
         if image_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
             continue
-        results.append(evaluate_one(image_path, "chest_xray"))
+        result = evaluate_one(image_path, "chest_xray", model_metadata)
+        results.append(result)
+        print(f"  {image_path.name}: {result['final_action']} ({result.get('risk_category', '—')})")
 
+    print(f"\nEvaluating non-chest images from {nonchest_dir}...")
     for image_path in sorted(nonchest_dir.iterdir()):
         if image_path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
             continue
-        results.append(evaluate_one(image_path, "not_chest_xray"))
+        result = evaluate_one(image_path, "not_chest_xray", model_metadata)
+        results.append(result)
+        print(f"  {image_path.name}: {result['final_action']} ({result.get('risk_category', '—')})")
 
     output_path = Path("evaluation/evaluation_results.json")
     output_path.write_text(json.dumps(results, indent=2))
@@ -89,7 +118,7 @@ def main():
     chest_total = sum(r["expected_group"] == "chest_xray" for r in results)
     nonchest_total = sum(r["expected_group"] == "not_chest_xray" for r in results)
 
-    chest_answer_like = sum(
+    chest_accepted = sum(
         r["expected_group"] == "chest_xray" and r["final_action"] != "STOP"
         for r in results
     )
@@ -98,9 +127,17 @@ def main():
         for r in results
     )
 
-    print(f"Chest images accepted (not STOP): {chest_answer_like}/{chest_total}")
-    print(f"Non-chest images stopped: {nonchest_stopped}/{nonchest_total}")
-    print(f"Saved detailed results to {output_path}")
+    print(f"\n{'='*50}")
+    print(f"EVALUATION RESULTS")
+    print(f"{'='*50}")
+    print(f"Chest images accepted (not STOP):  {chest_accepted}/{chest_total}")
+    print(f"Non-chest images stopped:          {nonchest_stopped}/{nonchest_total}")
+    if chest_total:
+        print(f"Chest acceptance rate:             {chest_accepted/chest_total*100:.1f}%")
+    if nonchest_total:
+        print(f"Non-chest rejection rate:          {nonchest_stopped/nonchest_total*100:.1f}%")
+    print(f"{'='*50}")
+    print(f"Detailed results saved to {output_path}")
 
 
 if __name__ == "__main__":

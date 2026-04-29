@@ -30,6 +30,13 @@ BONE_XRAY_LABELS = [
     "Abnormal",
 ]
 
+BRAIN_MRI_LABELS = [
+    "Glioma",
+    "Meningioma",
+    "No Tumor",
+    "Pituitary",
+]
+
 CHEST_REPO_ID = "itsomk/chexpert-densenet121"
 CHEST_FILENAME = "pytorch_model.safetensors"
 
@@ -87,10 +94,42 @@ class BoneDenseNet121Binary(nn.Module):
         return logits, features
 
 
+class BrainMriResNet18(nn.Module):
+    """ResNet18 wrapper for brain MRI 4-class classification."""
+
+    def __init__(self, num_classes: int = 4, dropout_p: float = 0.2):
+        super().__init__()
+        self.resnet = models.resnet18(weights=None)
+        self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_classes)
+        self.dropout_p = dropout_p
+
+    def extract_features(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.resnet.conv1(x)
+        x = self.resnet.bn1(x)
+        x = F.relu(x, inplace=False)
+        x = self.resnet.maxpool(x)
+        x = self.resnet.layer1(x)
+        x = self.resnet.layer2(x)
+        x = self.resnet.layer3(x)
+        x = self.resnet.layer4(x)
+        x = self.resnet.avgpool(x)
+        x = torch.flatten(x, 1)
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.extract_features(x)
+        return self.resnet.fc(features)
+
+    def forward_with_mc_dropout(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        features = self.extract_features(x)
+        dropped = F.dropout(features, p=self.dropout_p, training=True)
+        logits = self.resnet.fc(dropped)
+        return logits, features
+
+
 def load_chest_xray_model() -> DenseNet121Classifier:
     local_path = hf_hub_download(repo_id=CHEST_REPO_ID, filename=CHEST_FILENAME)
     state = load_file(local_path)
-
     model = DenseNet121Classifier(num_labels=14, dropout_p=0.2)
     model.load_state_dict(state, strict=True)
     model.eval()
@@ -99,13 +138,11 @@ def load_chest_xray_model() -> DenseNet121Classifier:
 
 def _remap_bone_state_dict_keys(state_dict: dict) -> dict:
     remapped = {}
-
     for key, value in state_dict.items():
         new_key = key
         if key.startswith("features.") or key.startswith("classifier."):
             new_key = f"densenet.{key}"
         remapped[new_key] = value
-
     return remapped
 
 
@@ -122,9 +159,36 @@ def load_bone_xray_model(model_path: str) -> BoneDenseNet121Binary:
         state_dict = checkpoint
 
     state_dict = _remap_bone_state_dict_keys(state_dict)
-
     model = BoneDenseNet121Binary()
     model.load_state_dict(state_dict, strict=True)
+    model.eval()
+    return model
+
+
+def load_brain_mri_model(model_path: str) -> BrainMriResNet18:
+    checkpoint_path = Path(model_path)
+    if not checkpoint_path.exists():
+        raise ValueError(f"Brain MRI model checkpoint not found at: {model_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        num_classes = checkpoint.get("num_classes", 4)
+    else:
+        state_dict = checkpoint
+        num_classes = 4
+
+    # Remap plain resnet18 keys → BrainMriResNet18 wrapper keys (resnet.*)
+    remapped = {}
+    for key, value in state_dict.items():
+        if not key.startswith("resnet."):
+            remapped[f"resnet.{key}"] = value
+        else:
+            remapped[key] = value
+
+    model = BrainMriResNet18(num_classes=num_classes, dropout_p=0.2)
+    model.load_state_dict(remapped, strict=True)
     model.eval()
     return model
 
@@ -166,6 +230,11 @@ class EnsembleModel:
             self.task_type = "binary"
             return load_bone_xray_model(self._model_path())
 
+        if region == "brain" and modality == "mri":
+            self.labels = BRAIN_MRI_LABELS
+            self.task_type = "multiclass"
+            return load_brain_mri_model(self._model_path())
+
         raise ValueError(
             f"No inference implementation is available yet for region='{region}' and modality='{modality}'."
         )
@@ -175,12 +244,10 @@ class EnsembleModel:
 
         with torch.no_grad():
             feature_vector = None
-
             for i in range(self.mc_passes):
                 logits, features = self.model.forward_with_mc_dropout(tensor)
                 probs = torch.sigmoid(logits).squeeze(0).cpu().numpy()
                 mc_probs.append(probs)
-
                 if i == 0:
                     feature_vector = features.squeeze(0).cpu().numpy()
 
@@ -228,13 +295,11 @@ class EnsembleModel:
 
         with torch.no_grad():
             feature_vector = None
-
             for i in range(self.mc_passes):
                 logits, features = self.model.forward_with_mc_dropout(tensor)
                 abnormal_prob = float(torch.sigmoid(logits).squeeze().cpu().item())
                 normal_prob = 1.0 - abnormal_prob
                 mc_probs.append([normal_prob, abnormal_prob])
-
                 if i == 0:
                     feature_vector = features.squeeze(0).cpu().numpy()
 
@@ -244,7 +309,47 @@ class EnsembleModel:
 
         top_idx = int(np.argmax(mean_probs))
         predictive_entropy = float(-np.sum(mean_probs * np.log(mean_probs + 1e-12)))
+        reliability_score = float(1.0 - np.mean(var_probs))
+        reliability_score = max(0.0, min(1.0, reliability_score))
 
+        return {
+            "top_label": self.labels[top_idx],
+            "top_probability": float(mean_probs[top_idx]),
+            "positive_findings": [self.labels[top_idx]],
+            "probabilities": {
+                self.labels[i]: float(mean_probs[i]) for i in range(len(self.labels))
+            },
+            "epistemic_uncertainty": {
+                self.labels[i]: float(var_probs[i]) for i in range(len(self.labels))
+            },
+            "aleatoric_uncertainty": {"predictive_entropy": predictive_entropy},
+            "reliability_score": reliability_score,
+            "disagreement_score": float(np.mean(var_probs)),
+            "secondary_verification_triggered": False,
+            "ensemble_member_count": 1,
+            "model_id": getattr(self.model_metadata, "model_id", "unknown_model"),
+            "model_version": getattr(self.model_metadata, "version", "unknown_version"),
+            "features": feature_vector.tolist() if feature_vector is not None else None,
+        }
+
+    def _predict_multiclass(self, tensor: torch.Tensor) -> dict:
+        mc_probs = []
+
+        with torch.no_grad():
+            feature_vector = None
+            for i in range(self.mc_passes):
+                logits, features = self.model.forward_with_mc_dropout(tensor)
+                probs = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()
+                mc_probs.append(probs)
+                if i == 0:
+                    feature_vector = features.squeeze(0).cpu().numpy()
+
+        mc_probs = np.array(mc_probs, dtype=np.float32)
+        mean_probs = mc_probs.mean(axis=0)
+        var_probs = mc_probs.var(axis=0)
+
+        top_idx = int(np.argmax(mean_probs))
+        predictive_entropy = float(-np.sum(mean_probs * np.log(mean_probs + 1e-12)))
         reliability_score = float(1.0 - np.mean(var_probs))
         reliability_score = max(0.0, min(1.0, reliability_score))
 
@@ -271,8 +376,8 @@ class EnsembleModel:
     def predict(self, tensor: torch.Tensor) -> dict:
         if self.task_type == "multilabel":
             return self._predict_multilabel(tensor)
-
         if self.task_type == "binary":
             return self._predict_binary(tensor)
-
+        if self.task_type == "multiclass":
+            return self._predict_multiclass(tensor)
         raise ValueError("Unsupported inference task type.")
