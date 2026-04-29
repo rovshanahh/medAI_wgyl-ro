@@ -23,3 +23,9 @@ venv/
 # uploads / temp
 tmp/
 temp/
+
+# Model checkpoints — too large for GitHub
+backend/models/
+backend/reference_data/input_gate/
+backend/logs/
+backend/temp_uploads/
