@@ -29,3 +29,10 @@ backend/models/
 backend/reference_data/input_gate/
 backend/logs/
 backend/temp_uploads/
+# macOS
+.DS_Store
+
+# local datasets
+backend/raw_datasets/
+backend/datasets/
+backend/backend_tree.txt
