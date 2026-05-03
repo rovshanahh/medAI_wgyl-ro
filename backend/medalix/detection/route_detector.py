@@ -14,6 +14,9 @@ class RouteDetector:
         "unknown": (None, None),
     }
 
+    MIN_CONFIDENCE = 0.80
+    MIN_MARGIN = 0.30
+
     def __init__(
         self,
         model_path: str = "reference_data/route_detector/route_detector_model.pth",
@@ -56,9 +59,11 @@ class RouteDetector:
         except UnidentifiedImageError:
             return {
                 "route_label": "unknown",
+                "raw_route_label": "unknown",
                 "region": None,
                 "modality": None,
                 "confidence": 0.0,
+                "margin": 0.0,
                 "requires_confirmation": True,
                 "supported": False,
                 "probabilities": {},
@@ -72,39 +77,55 @@ class RouteDetector:
             probs = torch.softmax(logits, dim=1).squeeze(0).cpu().numpy()
 
         pred_idx = int(probs.argmax())
-        route_label = self.class_names[pred_idx]
+        raw_route_label = self.class_names[pred_idx]
         confidence = float(probs[pred_idx])
 
         sorted_probs = sorted([float(p) for p in probs], reverse=True)
-        margin = sorted_probs[0] - sorted_probs[1] if len(sorted_probs) > 1 else sorted_probs[0]
-
-        region, modality = self.ROUTE_TO_REGION_MODALITY.get(route_label, (None, None))
-
-        supported = route_label != "unknown" and region is not None and modality is not None
-
-        # Conservative safety rule.
-        # Unknown always stops.
-        # Low-confidence or low-margin predictions require stop/confirmation.
-        requires_confirmation = (
-            route_label == "unknown"
-            or confidence < 0.80
-            or margin < 0.30
+        margin = (
+            sorted_probs[0] - sorted_probs[1]
+            if len(sorted_probs) > 1
+            else sorted_probs[0]
         )
 
+        raw_region, raw_modality = self.ROUTE_TO_REGION_MODALITY.get(
+            raw_route_label,
+            (None, None),
+        )
+
+        low_confidence = confidence < self.MIN_CONFIDENCE
+        low_margin = margin < self.MIN_MARGIN
+        raw_unknown = raw_route_label == "unknown"
+
+        if raw_unknown or low_confidence or low_margin:
+            safe_route_label = "unknown"
+            region = None
+            modality = None
+            supported = False
+            requires_confirmation = True
+            reason = (
+                "Route detector confidence or margin was insufficient, "
+                "so input was treated as unknown."
+            )
+        else:
+            safe_route_label = raw_route_label
+            region = raw_region
+            modality = raw_modality
+            supported = region is not None and modality is not None
+            requires_confirmation = False
+            reason = "Route selected by multi-class route detector."
+
         return {
-            "route_label": route_label,
+            "route_label": safe_route_label,
+            "raw_route_label": raw_route_label,
             "region": region,
             "modality": modality,
             "confidence": confidence,
             "margin": margin,
             "requires_confirmation": requires_confirmation,
-            "supported": supported and not requires_confirmation,
+            "supported": supported,
             "probabilities": {
-                self.class_names[i]: float(probs[i]) for i in range(len(self.class_names))
+                self.class_names[i]: float(probs[i])
+                for i in range(len(self.class_names))
             },
-            "reason": (
-                "Route selected by multi-class route detector."
-                if supported and not requires_confirmation
-                else "Route detector could not safely select a supported route."
-            ),
+            "reason": reason,
         }
