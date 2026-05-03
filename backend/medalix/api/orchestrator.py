@@ -142,6 +142,8 @@ class Orchestrator:
             "score": ood_result.get("score"),
             "is_hard_ood": ood_result.get("is_hard_ood", False),
             "reason": ood_result.get("reason"),
+            "method": ood_result.get("method"),
+            "metrics": ood_result.get("metrics", {}),
         }
 
     def _build_explainability_result(self, explainability_result: dict | None = None) -> dict:
@@ -419,20 +421,12 @@ class Orchestrator:
                 )
 
             state.set_stage("ood")
-            if state.detection_result.get("region") in {"bone", "brain"}:
-                raw_ood_result = {
-                    "score": 0.0,
-                    "tier": "IN_DISTRIBUTION",
-                    "is_hard_ood": False,
-                    "reason": (
-                        f"{state.detection_result.get('region', 'Route').title()} route "
-                        "currently bypasses OOD until route-specific feature stats are available."
-                    ),
-                }
-            else:
-                ood_detector = OODDetector()
-                raw_ood_result = ood_detector.evaluate(state.tensor, raw_inference_result)
-
+            ood_detector = OODDetector()
+            raw_ood_result = ood_detector.evaluate(
+                tensor=state.tensor,
+                inference_result=raw_inference_result,
+                route_label=selected_route,
+            )
             state.ood_result = self._build_ood_result(raw_ood_result)
 
             state.set_stage("explainability")
