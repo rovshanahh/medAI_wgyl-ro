@@ -36,3 +36,6 @@ backend/temp_uploads/
 backend/raw_datasets/
 backend/datasets/
 backend/backend_tree.txt
+
+# local test images
+backend/test_samples/
