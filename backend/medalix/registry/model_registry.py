@@ -7,6 +7,8 @@ from .routing_table import RoutingTable
 
 
 class ModelRegistry:
+    REMOTE_MODEL_IDS = {"chest_xray_mvp"}
+
     def __init__(self, registry_path: str) -> None:
         self._registry_path = Path(registry_path)
         self._checksum_validator = ChecksumValidator()
@@ -16,6 +18,9 @@ class ModelRegistry:
         self._load()
 
     def _load(self) -> None:
+        if not self._registry_path.exists():
+            raise FileNotFoundError(f"Model registry not found: {self._registry_path}")
+
         with self._registry_path.open("r", encoding="utf-8") as f:
             data = json.load(f)
 
@@ -44,8 +49,10 @@ class ModelRegistry:
 
     def lookup_by_route(self, region: str, modality: str) -> ModelMetadata:
         model_id = self._routing_table.resolve(region, modality)
+
         if model_id not in self._models:
             raise ValueError(f"Model id {model_id} not found in registry")
+
         return self._models[model_id]
 
     def validate_model(self, metadata: ModelMetadata) -> None:
@@ -58,7 +65,7 @@ class ModelRegistry:
 
         if status != "ACTIVE":
             raise ValueError(
-                f"Model {metadata.model_id} is registered but not yet active; status={metadata.status}"
+                f"Model {metadata.model_id} is registered but not active; status={metadata.status}"
             )
 
         if metadata.ensemble_members:
@@ -68,11 +75,21 @@ class ModelRegistry:
                 )
             return
 
-        if not metadata.model_path and metadata.architecture != "densenet121":
+        if metadata.model_id in self.REMOTE_MODEL_IDS:
+            return
+
+        if not metadata.model_path:
             raise ValueError(
-                f"Model {metadata.model_id} has no model_path and no ensemble_members"
+                f"Model {metadata.model_id} has no local model_path and is not registered as a remote model"
             )
 
-        if metadata.model_path and metadata.checksum:
+        model_path = Path(metadata.model_path)
+
+        if not model_path.exists():
+            raise ValueError(
+                f"Model {metadata.model_id} checkpoint not found at {metadata.model_path}"
+            )
+
+        if metadata.checksum:
             if not self._checksum_validator.validate(metadata.model_path, metadata.checksum):
                 raise ValueError(f"Checksum mismatch for model {metadata.model_id}")

@@ -1,5 +1,6 @@
 import time
 import uuid
+from datetime import UTC, datetime
 
 
 class SessionStore:
@@ -14,13 +15,22 @@ class SessionStore:
 
     def save_result(self, analysis_id: str, result: dict) -> None:
         self.evict_expired()
-        self._results[analysis_id] = result
-        self._created_at[analysis_id] = time.time()
+
+        now = time.time()
+
+        stored_result = dict(result or {})
+        stored_result.setdefault("analysis_id", analysis_id)
+        stored_result.setdefault("stored_at", datetime.now(UTC).isoformat())
+        stored_result.setdefault("result_ttl_seconds", self._ttl_seconds)
+
+        self._results[analysis_id] = stored_result
+        self._created_at[analysis_id] = now
 
     def get_result(self, analysis_id: str) -> dict | None:
         self.evict_expired()
 
         created_at = self._created_at.get(analysis_id)
+
         if created_at is None:
             return None
 
@@ -36,10 +46,16 @@ class SessionStore:
 
     def evict_expired(self) -> None:
         now = time.time()
+
         expired_ids = [
             analysis_id
             for analysis_id, created_at in self._created_at.items()
             if now - created_at > self._ttl_seconds
         ]
+
         for analysis_id in expired_ids:
             self.delete_result(analysis_id)
+
+    def count(self) -> int:
+        self.evict_expired()
+        return len(self._results)

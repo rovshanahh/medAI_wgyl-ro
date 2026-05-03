@@ -8,32 +8,37 @@ orchestrator = Orchestrator()
 
 @router.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "service": "MedAIx backend",
+    }
 
 
 @router.get("/")
 def root():
-    return {"message": "MedAIx backend is running"}
+    return {
+        "message": "MedAIx backend is running",
+        "supported_uploads": [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"],
+        "routes": ["brain_mri", "bone_xray", "chest_xray", "unknown"],
+    }
 
 
 @router.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
-    try:
-        content = await file.read()
-        return orchestrator.execute(
-            filename=file.filename,
-            content_type=file.content_type,
-            content=content,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(exc)}") from exc
+    content = await file.read()
+
+    return orchestrator.execute(
+        filename=file.filename or "upload",
+        content_type=file.content_type,
+        content=content,
+    )
 
 
 @router.get("/result/{analysis_id}")
 def get_result(analysis_id: str):
     result = orchestrator.get_result(analysis_id)
+
     if result is None:
         raise HTTPException(status_code=404, detail="Analysis result not found")
+
     return result

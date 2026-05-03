@@ -12,18 +12,37 @@ class ModelRouter:
         modality: str,
         input_shape: tuple[int, ...],
     ) -> ModelMetadata:
-        metadata = self._registry.lookup_by_route(region, modality)
+        normalized_region = str(region or "").strip().lower()
+        normalized_modality = str(modality or "").strip().lower()
+
+        if not normalized_region or not normalized_modality:
+            raise ValueError(
+                f"Cannot resolve model route with region='{region}' and modality='{modality}'"
+            )
+
+        metadata = self._registry.lookup_by_route(
+            normalized_region,
+            normalized_modality,
+        )
+
         self._registry.validate_model(metadata)
 
-        if metadata.region.lower() != region.lower():
-            raise ValueError("Region mismatch between route and model metadata")
+        if metadata.normalized_region() != normalized_region:
+            raise ValueError(
+                f"Region mismatch between route and model metadata. "
+                f"Route={normalized_region}, model={metadata.region}"
+            )
 
-        if metadata.modality.lower() != modality.lower():
-            raise ValueError("Modality mismatch between route and model metadata")
+        if metadata.normalized_modality() != normalized_modality:
+            raise ValueError(
+                f"Modality mismatch between route and model metadata. "
+                f"Route={normalized_modality}, model={metadata.modality}"
+            )
 
         if not metadata.supports_shape(input_shape):
             raise ValueError(
-                f"Input shape mismatch. Expected {metadata.input_shape}, got {input_shape}"
+                f"Input shape mismatch for model {metadata.model_id}. "
+                f"Expected {metadata.input_shape}, got {input_shape}"
             )
 
         return metadata

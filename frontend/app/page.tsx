@@ -20,21 +20,48 @@ type AnalysisResponse = {
     accepted_for_analysis?: boolean;
     confidence?: number;
     message?: string;
+    selected_route?: string;
+    route_scores?: Record<string, number>;
+    top_level_gate?: {
+      route_detector?: {
+        route_label?: string;
+        raw_route_label?: string;
+        confidence?: number;
+        margin?: number;
+        supported?: boolean;
+        requires_confirmation?: boolean;
+        probabilities?: Record<string, number>;
+        reason?: string;
+      };
+      conversion?: {
+        converted?: boolean;
+        source_format?: string;
+        working_format?: string;
+        message?: string;
+      };
+    };
   };
   detection?: {
-    region?: string;
-    modality?: string;
+    region?: string | null;
+    modality?: string | null;
     confidence?: number;
     requires_confirmation?: boolean;
+    supported?: boolean;
+    reason?: string;
   };
   inference?: {
     top_label?: string;
     top_probability?: number;
+    positive_findings?: string[];
+    probabilities?: Record<string, number>;
+    reliability_score?: number;
+    disagreement_score?: number;
   };
   explainability?: {
-    method?: string;
-    heatmap_path?: string;
+    method?: string | null;
+    heatmap_path?: string | null;
     warning?: string;
+    target_label?: string;
   };
   quality?: {
     status?: string | null;
@@ -42,16 +69,23 @@ type AnalysisResponse = {
     requires_reupload?: boolean | null;
     blocking?: boolean;
     reason?: string;
+    metrics?: Record<string, number>;
   };
   routing?: {
     accepted_findings_set?: string[];
-    selected_model?: string;
+    selected_model?: string | null;
     set_size?: number;
     requires_confirmation?: boolean;
+    top_probability?: number;
+    routing_candidates?: string[];
   };
   ood?: {
     tier?: string;
-    score?: number;
+    score?: number | null;
+    reason?: string;
+    method?: string;
+    metrics?: Record<string, number | boolean>;
+    is_hard_ood?: boolean;
   };
   policy?: {
     action?: string;
@@ -59,20 +93,27 @@ type AnalysisResponse = {
     risk_category?: string;
     warnings?: string[];
   };
+  warnings?: string[];
   disclaimer?: string;
+  message?: string;
 };
 
 const BACKEND_URL = "http://localhost:8000/analyze";
 const HEATMAP_BASE_URL = "http://localhost:8000";
 
-function formatPercent(value?: number) {
+function formatPercent(value?: number | null) {
   if (value == null) return "—";
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function formatNumber(value?: number) {
+function formatNumber(value?: number | null) {
   if (value == null) return "—";
   return value.toFixed(3);
+}
+
+function formatLabel(value?: string | null) {
+  if (!value) return "—";
+  return value.replaceAll("_", " ");
 }
 
 function getRiskTone(risk?: string) {
@@ -92,10 +133,27 @@ function getInputTone(accepted?: boolean) {
   if (accepted === true) {
     return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
   }
+
   if (accepted === false) {
     return "bg-red-50 text-red-700 ring-1 ring-red-100";
   }
+
   return "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200";
+}
+
+function getRouteTone(route?: string | null) {
+  switch (route) {
+    case "brain_mri":
+      return "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100";
+    case "bone_xray":
+      return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
+    case "chest_xray":
+      return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+    case "unknown":
+      return "bg-red-50 text-red-700 ring-1 ring-red-100";
+    default:
+      return "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200";
+  }
 }
 
 export default function Home() {
@@ -103,6 +161,8 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const isDicomFile = file?.name.toLowerCase().endsWith(".dcm") ?? false;
 
   const previewUrl = useMemo(() => {
     if (!file) return "";
@@ -117,14 +177,29 @@ export default function Home() {
 
   const heatmapUrl = useMemo(() => {
     const rawPath = result?.explainability?.heatmap_path;
+
     if (!rawPath) return "";
-  
+
     if (rawPath.startsWith("http://") || rawPath.startsWith("https://")) {
       return rawPath;
     }
-  
+
     return `${HEATMAP_BASE_URL}${rawPath}`;
   }, [result]);
+
+  const routeDetector = result?.input_gate?.top_level_gate?.route_detector;
+  const conversion = result?.input_gate?.top_level_gate?.conversion;
+  const selectedRoute = result?.input_gate?.selected_route || routeDetector?.route_label;
+  const routeProbabilities =
+    routeDetector?.probabilities || result?.input_gate?.route_scores || {};
+  const inferenceRan = Boolean(result?.inference?.top_label);
+
+  const warnings = [
+    ...(result?.policy?.warnings ?? []),
+    ...(result?.quality?.warnings ?? []),
+    ...(result?.warnings ?? []),
+    ...(result?.explainability?.warning ? [result.explainability.warning] : []),
+  ].filter(Boolean);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0] ?? null;
@@ -171,11 +246,6 @@ export default function Home() {
     setResult(null);
     setError("");
   };
-
-  const warnings = [
-    ...(result?.policy?.warnings ?? []),
-    ...(result?.explainability?.warning ? [result.explainability.warning] : []),
-  ];
 
   return (
     <main
@@ -269,15 +339,18 @@ export default function Home() {
               <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 ring-1 ring-red-100">
                 <div className="h-5 w-5 rounded-full bg-red-500" />
               </div>
+
               <span className="text-sm text-zinc-700">
                 Select a medical image to begin review
               </span>
+
               <span className="mt-2 text-xs text-zinc-500">
-                Supported formats depend on the current setup
+                Supported: PNG, JPG, TIFF, DICOM
               </span>
+
               <input
                 type="file"
-                accept=".png,.jpg,.jpeg"
+                accept=".png,.jpg,.jpeg,.tif,.tiff,.dcm"
                 className="hidden"
                 onChange={handleFileChange}
               />
@@ -292,9 +365,16 @@ export default function Home() {
               </div>
             </div>
 
-            {previewUrl ? (
+            {previewUrl && !isDicomFile ? (
               <div className="mt-4 overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
                 <img src={previewUrl} alt="Preview" className="h-auto w-full object-cover" />
+              </div>
+            ) : isDicomFile ? (
+              <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-[24px] border border-zinc-200 bg-white px-6 text-center text-sm text-zinc-500">
+                <p className="font-medium text-zinc-700">DICOM file selected</p>
+                <p className="mt-2">
+                  Browser preview is unavailable for .dcm files. The backend will convert it for analysis.
+                </p>
               </div>
             ) : (
               <div className="mt-4 flex h-64 items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-sm text-zinc-400">
@@ -324,7 +404,7 @@ export default function Home() {
             ) : (
               <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_300px]">
                 <div>
-                  <div className="grid gap-6 border-b border-zinc-200 pb-6 md:grid-cols-[1fr_auto_auto] md:items-end">
+                  <div className="grid gap-6 border-b border-zinc-200 pb-6 md:grid-cols-[1fr_auto_auto_auto] md:items-end">
                     <div>
                       <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
                         Recommended next step
@@ -367,6 +447,21 @@ export default function Home() {
                         </span>
                       </div>
                     </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Route
+                      </p>
+                      <div className="mt-3">
+                        <span
+                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium capitalize ${getRouteTone(
+                            selectedRoute
+                          )}`}
+                        >
+                          {formatLabel(selectedRoute)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mt-10 border-t border-zinc-200 pt-6">
@@ -374,9 +469,21 @@ export default function Home() {
                       Why this was suggested
                     </p>
                     <p className="mt-4 text-base leading-7 text-zinc-700">
-                      {result.policy?.reason || "—"}
+                      {result.policy?.reason || result.input_gate?.message || "—"}
                     </p>
                   </div>
+
+                  {conversion?.converted ? (
+                    <div className="mt-10 rounded-[18px] bg-white px-4 py-4 text-sm text-zinc-700 ring-1 ring-zinc-200">
+                      <p className="font-medium text-zinc-900">Format conversion</p>
+                      <p className="mt-2">
+                        {conversion.message || "DICOM was converted for analysis."}
+                      </p>
+                      <p className="mt-2 text-zinc-500">
+                        {conversion.source_format} → {conversion.working_format}
+                      </p>
+                    </div>
+                  ) : null}
 
                   <div className="mt-10 grid gap-8 md:grid-cols-2">
                     <div>
@@ -384,16 +491,16 @@ export default function Home() {
                         Primary finding
                       </p>
                       <p className="mt-3 break-words text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {result.inference?.top_label || "—"}
+                        {inferenceRan ? result.inference?.top_label : "No inference was run"}
                       </p>
                     </div>
 
                     <div>
                       <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Confidence
+                        Finding confidence
                       </p>
                       <p className="mt-3 text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {formatPercent(result.inference?.top_probability)}
+                        {inferenceRan ? formatPercent(result.inference?.top_probability) : "—"}
                       </p>
                     </div>
                   </div>
@@ -402,11 +509,12 @@ export default function Home() {
                     <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
                       Findings considered
                     </p>
+
                     <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
                       {result.routing?.accepted_findings_set?.length ? (
                         result.routing.accepted_findings_set.map((item: string) => (
                           <div key={item} className="py-3 text-sm text-zinc-700">
-                            {item}
+                            {formatLabel(item)}
                           </div>
                         ))
                       ) : (
@@ -417,15 +525,42 @@ export default function Home() {
                     </div>
                   </div>
 
+                  <div className="mt-10">
+                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Route detector probabilities
+                    </p>
+
+                    <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
+                      {Object.keys(routeProbabilities).length ? (
+                        Object.entries(routeProbabilities).map(([label, probability]) => (
+                          <div
+                            key={label}
+                            className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
+                          >
+                            <span className="capitalize">{formatLabel(label)}</span>
+                            <span className="font-medium text-zinc-900">
+                              {formatPercent(probability)}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-3 text-sm text-zinc-500">
+                          No route probabilities available
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {warnings.length > 0 ? (
                     <div className="mt-10 border-t border-zinc-200 pt-6">
                       <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
                         Things to review carefully
                       </p>
+
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {warnings.map((warning) => (
+                        {warnings.map((warning, index) => (
                           <span
-                            key={warning}
+                            key={`${warning}-${index}`}
                             className="inline-flex items-center gap-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 ring-1 ring-red-100"
                           >
                             <AlertTriangle size={12} />
@@ -440,6 +575,7 @@ export default function Home() {
                     <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
                       Technical review details
                     </p>
+
                     <div className="mt-4 grid gap-6 text-sm leading-7 text-zinc-700 md:grid-cols-2">
                       <div>
                         <p>
@@ -451,6 +587,11 @@ export default function Home() {
                               : "—"}
                         </p>
                         <p>Input confidence: {formatPercent(result.input_gate?.confidence)}</p>
+                      </div>
+
+                      <div>
+                        <p>Selected route: {formatLabel(selectedRoute)}</p>
+                        <p>Raw route: {formatLabel(routeDetector?.raw_route_label)}</p>
                       </div>
 
                       <div>
@@ -473,7 +614,12 @@ export default function Home() {
 
                       <div>
                         <p>Distribution status: {result.ood?.tier || "—"}</p>
+                        <p>OOD method: {result.ood?.method || "—"}</p>
+                      </div>
+
+                      <div>
                         <p>Screening score: {formatNumber(result.ood?.score)}</p>
+                        <p>OOD reason: {result.ood?.reason || "—"}</p>
                       </div>
 
                       <div>
@@ -490,6 +636,7 @@ export default function Home() {
                     <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
                       Disclaimer
                     </p>
+
                     <p className="mt-4 text-sm leading-7 text-zinc-600">
                       {result.disclaimer ||
                         "This platform is intended solely for research and educational use. Outputs are non-diagnostic and must not be used for clinical decision-making."}
@@ -521,6 +668,13 @@ export default function Home() {
                       <span>Explanation method</span>
                       <span className="font-medium text-zinc-900">
                         {result.explainability?.method || "—"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between border-b border-zinc-200 py-3">
+                      <span>Explanation target</span>
+                      <span className="font-medium text-zinc-900">
+                        {result.explainability?.target_label || result.inference?.top_label || "—"}
                       </span>
                     </div>
                   </div>

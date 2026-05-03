@@ -4,6 +4,7 @@ from medalix.audit.audit_trace_builder import AuditTraceBuilder
 from medalix.audit.logger import Logger
 from medalix.detection.route_detector import RouteDetector
 from medalix.explainability.explainability_engine import ExplainabilityEngine
+from medalix.ingestion.dicom_converter import DicomConverter
 from medalix.ingestion.ingestion_validator import IngestionValidator
 from medalix.inference.ensemble_model import EnsembleModel
 from medalix.ood.ood_detector import OODDetector
@@ -45,6 +46,7 @@ class Orchestrator:
         self.model_router = ModelRouter(self.model_registry)
 
         self.route_detector = RouteDetector()
+        self.dicom_converter = DicomConverter()
 
     def get_result(self, analysis_id: str) -> dict | None:
         result = self.session_store.get_result(analysis_id)
@@ -61,8 +63,34 @@ class Orchestrator:
         self.logger.info({"event": "result_stored", "analysis_id": state.analysis_id})
         return payload
 
-    def _build_input_gate_result(self, route_result: dict | None = None) -> dict:
+    def _prepare_working_content(self, filename: str, content: bytes) -> tuple[bytes, str, dict]:
+        extension = Path(filename).suffix.lower()
+
+        if extension != ".dcm":
+            return content, filename, {
+                "converted": False,
+                "source_format": extension,
+                "working_format": extension,
+                "message": "No format conversion needed.",
+            }
+
+        converted_content = self.dicom_converter.convert_to_png_bytes(content)
+        converted_filename = f"{Path(filename).stem}.png"
+
+        return converted_content, converted_filename, {
+            "converted": True,
+            "source_format": ".dcm",
+            "working_format": ".png",
+            "message": "DICOM image converted to PNG-compatible bytes for MVP inference pipeline.",
+        }
+
+    def _build_input_gate_result(
+        self,
+        route_result: dict | None = None,
+        conversion_result: dict | None = None,
+    ) -> dict:
         route_result = route_result or {}
+        conversion_result = conversion_result or {}
         supported = bool(route_result.get("supported", False))
 
         return {
@@ -80,6 +108,7 @@ class Orchestrator:
             "route_scores": route_result.get("probabilities", {}),
             "top_level_gate": {
                 "route_detector": route_result,
+                "conversion": conversion_result,
             },
         }
 
@@ -153,6 +182,7 @@ class Orchestrator:
             "method": explainability_result.get("method"),
             "heatmap_path": explainability_result.get("heatmap_path"),
             "warning": explainability_result.get("warning"),
+            "target_label": explainability_result.get("target_label"),
         }
 
     def _build_quality_result(self, quality_result: dict | None = None) -> dict:
@@ -201,8 +231,18 @@ class Orchestrator:
         }
 
     def _build_trace(self, state: PipelineState):
+        input_gate = state.input_gate_result or {}
+        conversion = (
+            input_gate.get("top_level_gate", {}).get("conversion", {})
+            if isinstance(input_gate, dict)
+            else {}
+        )
+
         return self.trace_builder.build(
+            analysis_id=state.analysis_id,
             filename=state.filename,
+            content_type=state.content_type,
+            size_bytes=state.size_bytes,
             input_gate=state.input_gate_result or {},
             detection=state.detection_result or {},
             routing=state.routing_result or {},
@@ -212,6 +252,7 @@ class Orchestrator:
             inference_summary=state.inference_result or {},
             policy=state.policy_result or {},
             explainability=state.explainability_result or {},
+            conversion=conversion,
             pipeline_stages=state.stage_history,
         )
 
@@ -279,10 +320,19 @@ class Orchestrator:
             validator = IngestionValidator()
             validator.validate(filename, content_type, content)
 
-            state.set_stage("route_detection")
-            route_result = self.route_detector.predict(content)
+            state.set_stage("format_preparation")
+            working_content, working_filename, conversion_result = self._prepare_working_content(
+                filename=filename,
+                content=content,
+            )
 
-            state.input_gate_result = self._build_input_gate_result(route_result)
+            state.set_stage("route_detection")
+            route_result = self.route_detector.predict(working_content)
+
+            state.input_gate_result = self._build_input_gate_result(
+                route_result=route_result,
+                conversion_result=conversion_result,
+            )
             state.detection_result = self._build_detection_result(route_result)
 
             if not route_result.get("supported", False):
@@ -314,7 +364,7 @@ class Orchestrator:
             modality_for_preprocessing = "mri" if selected_route == "brain_mri" else "xray"
 
             state.original_image, state.tensor = preprocessor.run(
-                content,
+                working_content,
                 modality=modality_for_preprocessing,
             )
 
@@ -436,7 +486,7 @@ class Orchestrator:
                     original_image=state.original_image,
                     tensor=state.tensor,
                     inference_result=raw_inference_result,
-                    filename=filename,
+                    filename=working_filename,
                 )
                 state.explainability_result = self._build_explainability_result(
                     raw_explainability_result

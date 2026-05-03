@@ -9,7 +9,7 @@ class PreprocessingPipeline:
     RGB_MODALITIES = {"dermoscopy", "fundus"}
 
     def __init__(self):
-        self._xray_transform = transforms.Compose(
+        self._grayscale_transform = transforms.Compose(
             [
                 transforms.Resize((224, 224)),
                 transforms.Grayscale(num_output_channels=3),
@@ -41,16 +41,16 @@ class PreprocessingPipeline:
             raise ValueError(f"Failed to decode uploaded image: {str(exc)}") from exc
 
     def _select_profile(self, modality: str | None) -> str:
-        modality = (modality or "").lower()
+        modality = (modality or "").strip().lower()
 
         if modality in self.XRAY_MODALITIES:
-            return "xray_2d"
-
-        if modality in self.RGB_MODALITIES:
-            return "rgb_2d"
+            return "grayscale_2d"
 
         if modality in {"ct", "mri"}:
             return "grayscale_2d"
+
+        if modality in self.RGB_MODALITIES:
+            return "rgb_2d"
 
         return "rgb_2d"
 
@@ -58,11 +58,12 @@ class PreprocessingPipeline:
         image = self._decode_image(raw_bytes)
         profile = self._select_profile(modality)
 
-        if profile in {"xray_2d", "grayscale_2d"}:
-            processed_image = image.convert("L")
-            tensor = self._xray_transform(processed_image).unsqueeze(0)
-            return processed_image, tensor
+        if profile == "grayscale_2d":
+            grayscale_image = image.convert("L")
+            display_image = grayscale_image.convert("RGB")
+            tensor = self._grayscale_transform(grayscale_image).unsqueeze(0)
+            return display_image, tensor
 
-        processed_image = image.convert("RGB")
-        tensor = self._rgb_transform(processed_image).unsqueeze(0)
-        return processed_image, tensor
+        display_image = image.convert("RGB")
+        tensor = self._rgb_transform(display_image).unsqueeze(0)
+        return display_image, tensor
