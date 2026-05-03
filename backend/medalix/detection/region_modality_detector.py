@@ -21,60 +21,98 @@ class RegionModalityDetector:
         "fundus",
     }
 
-    REGION_KEYWORDS = {
-        "brain": {"brain", "head"},
-        "chest": {"chest", "thorax", "lung", "cxr"},
-        "abdomen": {"abdomen", "abdominal", "liver", "kidney", "pelvis"},
-        "breast": {"breast", "mammo", "mammogram", "mammography"},
-        "skin": {"skin", "derm", "dermoscopy", "lesion", "melanoma"},
-        "retina": {"retina", "retinal", "fundus", "eye", "ocular"},
-        "bone": {"bone", "wrist", "hand", "elbow", "shoulder", "finger", "humerus", "forearm", "mura"},
-    }
-
-    MODALITY_KEYWORDS = {
-        "mri": {"mri", "mr"},
-        "ct": {"ct"},
-        "xray": {"xray", "x-ray", "radiograph", "cxr"},
-        "mammography": {"mammography", "mammogram", "mammo"},
-        "dermoscopy": {"dermoscopy", "derm"},
-        "fundus": {"fundus", "retinal", "ocular"},
+    ROUTES = {
+        "brain_mri": {
+            "region": "brain",
+            "modality": "mri",
+            "keywords": {
+                "brain",
+                "head",
+                "mri",
+                "mr",
+                "glioma",
+                "meningioma",
+                "pituitary",
+                "tumor",
+                "tumour",
+                "no_tumor",
+                "notumor",
+            },
+        },
+        "chest_xray": {
+            "region": "chest",
+            "modality": "xray",
+            "keywords": {
+                "chest",
+                "thorax",
+                "lung",
+                "cxr",
+                "xray",
+                "x-ray",
+                "radiograph",
+                "pneumonia",
+            },
+        },
+        "bone_xray": {
+            "region": "bone",
+            "modality": "xray",
+            "keywords": {
+                "bone",
+                "wrist",
+                "hand",
+                "elbow",
+                "shoulder",
+                "finger",
+                "humerus",
+                "forearm",
+                "mura",
+                "xray",
+                "x-ray",
+                "radiograph",
+            },
+        },
     }
 
     def _collect_text(self, filename: str | None, content_type: str | None) -> str:
         parts = []
+
         if filename:
             parts.append(filename.lower())
+
         if content_type:
             parts.append(content_type.lower())
+
         return " ".join(parts)
 
-    def _match_label(self, text: str, keyword_map: dict[str, set[str]]) -> tuple[str | None, float]:
-        matches = []
+    def _score_routes_from_text(self, text: str) -> dict[str, float]:
+        scores = {}
 
-        for label, keywords in keyword_map.items():
-            score = sum(1 for keyword in keywords if keyword in text)
-            if score > 0:
-                matches.append((label, score))
+        for route_name, route_info in self.ROUTES.items():
+            keywords = route_info["keywords"]
+            hit_count = sum(1 for keyword in keywords if keyword in text)
 
-        if not matches:
-            return None, 0.0
+            if hit_count == 0:
+                scores[route_name] = 0.0
+            elif hit_count == 1:
+                scores[route_name] = 0.70
+            elif hit_count == 2:
+                scores[route_name] = 0.85
+            else:
+                scores[route_name] = 0.95
 
-        matches.sort(key=lambda item: item[1], reverse=True)
+        return scores
 
-        if len(matches) > 1 and matches[0][1] == matches[1][1]:
-            return None, 0.5
+    def _is_grayscale_tensor(self, tensor: torch.Tensor | None) -> bool:
+        if tensor is None or not isinstance(tensor, torch.Tensor):
+            return False
 
-        best_label, best_score = matches[0]
-        return best_label, 0.95 if best_score >= 2 else 0.85
+        if tensor.ndim != 4:
+            return False
 
-    def _tensor_is_xray_like(self, tensor: torch.Tensor | None) -> bool:
-        if tensor is None or not isinstance(tensor, torch.Tensor) or tensor.ndim != 4:
+        if tensor.shape[1] != 3:
             return False
 
         working = tensor.detach().float().cpu()
-
-        if working.shape[1] != 3:
-            return False
 
         ch0 = working[:, 0]
         ch1 = working[:, 1]
@@ -88,6 +126,23 @@ class RegionModalityDetector:
 
         return float(channel_gap) < 1e-4
 
+    def _select_best_route(self, route_scores: dict[str, float]) -> tuple[str | None, float, bool]:
+        ranked = sorted(route_scores.items(), key=lambda item: item[1], reverse=True)
+
+        best_route, best_score = ranked[0]
+        second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+
+        if best_score <= 0.0:
+            return None, 0.0, True
+
+        if best_score < 0.80:
+            return best_route, best_score, True
+
+        if best_score - second_score < 0.10:
+            return best_route, best_score, True
+
+        return best_route, best_score, False
+
     def predict(
         self,
         filename: str | None = None,
@@ -95,57 +150,50 @@ class RegionModalityDetector:
         tensor: torch.Tensor | None = None,
     ) -> dict:
         text = self._collect_text(filename, content_type)
+        route_scores = self._score_routes_from_text(text)
 
-        region, region_conf = self._match_label(text, self.REGION_KEYWORDS)
-        modality, modality_conf = self._match_label(text, self.MODALITY_KEYWORDS)
+        selected_route, confidence, requires_confirmation = self._select_best_route(route_scores)
 
-        if region is not None and modality is not None:
-            confidence = min(region_conf, modality_conf)
+        if selected_route is not None:
+            route_info = self.ROUTES[selected_route]
+
             return {
-                "region": region,
-                "modality": modality,
+                "route_label": selected_route,
+                "region": route_info["region"],
+                "modality": route_info["modality"],
                 "confidence": confidence,
-                "requires_confirmation": confidence < 0.80,
-                "supported": (
-                    region in self.SUPPORTED_REGIONS and modality in self.SUPPORTED_MODALITIES
+                "requires_confirmation": requires_confirmation,
+                "supported": True,
+                "route_scores": route_scores,
+                "reason": (
+                    "Route inferred from filename/content hints."
+                    if not requires_confirmation
+                    else "Route is possible but needs confirmation."
                 ),
-                "reason": None,
             }
 
-        if self._tensor_is_xray_like(tensor):
-            fallback_region = region or "bone"
-            fallback_modality = modality or "xray"
-
+        if self._is_grayscale_tensor(tensor):
             return {
-                "region": fallback_region,
-                "modality": fallback_modality,
-                "confidence": 0.81,
-                "requires_confirmation": False,
-                "supported": (
-                    fallback_region in self.SUPPORTED_REGIONS
-                    and fallback_modality in self.SUPPORTED_MODALITIES
-                ),
-                "reason": "Used temporary grayscale X-ray fallback routing.",
-            }
-
-        if region is not None or modality is not None:
-            return {
-                "region": region,
-                "modality": modality,
-                "confidence": min(
-                    region_conf if region is not None else 0.60,
-                    modality_conf if modality is not None else 0.60,
-                ),
+                "route_label": None,
+                "region": None,
+                "modality": None,
+                "confidence": 0.40,
                 "requires_confirmation": True,
                 "supported": False,
-                "reason": "Only partial routing information could be inferred.",
+                "route_scores": route_scores,
+                "reason": (
+                    "Image is grayscale, but grayscale alone is not enough to decide "
+                    "between MRI and X-ray."
+                ),
             }
 
         return {
+            "route_label": None,
             "region": None,
             "modality": None,
             "confidence": 0.0,
             "requires_confirmation": True,
             "supported": False,
-            "reason": "Could not infer region or modality from available input hints.",
+            "route_scores": route_scores,
+            "reason": "Could not infer region/modality from available input.",
         }
