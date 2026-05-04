@@ -7,6 +7,76 @@ router = APIRouter()
 orchestrator = Orchestrator()
 
 
+SUPPORTED_UPLOADS = [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"]
+
+ACTIVE_ROUTES = [
+    {
+        "route": "brain_mri",
+        "region": "brain",
+        "modality": "mri",
+        "model": "brain_mri_resnet18",
+        "description": "Reviews brain MRI images and returns the most likely tumor-related class.",
+        "status": "ACTIVE",
+    },
+    {
+        "route": "bone_xray",
+        "region": "bone",
+        "modality": "xray",
+        "model": "bone_xray_standard",
+        "description": "Reviews bone X-ray images and separates normal from abnormal cases.",
+        "status": "ACTIVE",
+    },
+    {
+        "route": "chest_xray",
+        "region": "chest",
+        "modality": "xray",
+        "model": "chest_xray_mvp",
+        "description": "Reviews chest X-ray images and highlights possible visible findings.",
+        "status": "ACTIVE",
+    },
+    {
+        "route": "retina_fundus",
+        "region": "retina",
+        "modality": "fundus",
+        "model": "retina_fundus_resnet18",
+        "description": "Reviews eye fundus images and estimates diabetic retinopathy severity.",
+        "status": "ACTIVE",
+    },
+]
+
+SAFETY_ROUTES = [
+    {
+        "route": "unknown",
+        "region": None,
+        "modality": None,
+        "model": None,
+        "description": "Stops unsupported or uncertain images before inference.",
+        "status": "STOP_BEFORE_INFERENCE",
+    }
+]
+
+INACTIVE_PLACEHOLDERS = [
+    {
+        "route": "abdomen_ct",
+        "region": "abdomen",
+        "modality": "ct",
+        "status": "INACTIVE",
+    },
+    {
+        "route": "breast_mammography",
+        "region": "breast",
+        "modality": "mammography",
+        "status": "INACTIVE",
+    },
+    {
+        "route": "skin_dermoscopy",
+        "region": "skin",
+        "modality": "dermoscopy",
+        "status": "INACTIVE",
+    },
+]
+
+
 @router.get("/health")
 def health():
     return {
@@ -19,73 +89,32 @@ def health():
 def root():
     return {
         "message": "MedAIx backend is running",
-        "supported_uploads": [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"],
-        "routes": ["brain_mri", "bone_xray", "chest_xray", "retina_fundus", "unknown"],
+        "supported_uploads": SUPPORTED_UPLOADS,
+        "routes": [route["route"] for route in ACTIVE_ROUTES] + ["unknown"],
+    }
+
+
+@router.get("/config")
+def config():
+    return {
+        "service": "MedAIx backend",
+        "supported_uploads": SUPPORTED_UPLOADS,
+        "active_routes": ACTIVE_ROUTES,
+        "safety_routes": SAFETY_ROUTES,
+        "inactive_placeholders": INACTIVE_PLACEHOLDERS,
+        "disclaimer": (
+            "Research-use only. Outputs are non-diagnostic and must not be used "
+            "for clinical decision-making."
+        ),
     }
 
 
 @router.get("/routes")
 def routes():
     return {
-        "active_routes": [
-            {
-                "route": "brain_mri",
-                "region": "brain",
-                "modality": "mri",
-                "model": "brain_mri_resnet18",
-                "status": "ACTIVE",
-            },
-            {
-                "route": "bone_xray",
-                "region": "bone",
-                "modality": "xray",
-                "model": "bone_xray_standard",
-                "status": "ACTIVE",
-            },
-            {
-                "route": "chest_xray",
-                "region": "chest",
-                "modality": "xray",
-                "model": "chest_xray_mvp",
-                "status": "ACTIVE",
-            },
-            {
-                "route": "retina_fundus",
-                "region": "retina",
-                "modality": "fundus",
-                "model": "retina_fundus_resnet18",
-                "status": "ACTIVE",
-            },
-        ],
-        "safety_routes": [
-            {
-                "route": "unknown",
-                "region": None,
-                "modality": None,
-                "model": None,
-                "status": "STOP_BEFORE_INFERENCE",
-            }
-        ],
-        "inactive_placeholders": [
-            {
-                "route": "abdomen_ct",
-                "region": "abdomen",
-                "modality": "ct",
-                "status": "INACTIVE",
-            },
-            {
-                "route": "breast_mammography",
-                "region": "breast",
-                "modality": "mammography",
-                "status": "INACTIVE",
-            },
-            {
-                "route": "skin_dermoscopy",
-                "region": "skin",
-                "modality": "dermoscopy",
-                "status": "INACTIVE",
-            },
-        ],
+        "active_routes": ACTIVE_ROUTES,
+        "safety_routes": SAFETY_ROUTES,
+        "inactive_placeholders": INACTIVE_PLACEHOLDERS,
     }
 
 
