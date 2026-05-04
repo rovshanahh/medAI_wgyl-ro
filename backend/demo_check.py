@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 COMMANDS = [
+    ("Backend asset check", ["python3", "check_backend_assets.py"]),
     ("Route detector test", ["python3", "test_route_detector.py"]),
     ("Pipeline smoke test", ["python3", "smoke_test_pipeline.py"]),
     ("Active route evaluation", ["python3", "evaluate_active_routes.py"]),
