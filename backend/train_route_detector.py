@@ -27,6 +27,7 @@ EXPECTED_CLASSES = [
     "brain_mri",
     "chest_xray",
     "retina_fundus",
+    "skin_dermoscopy",
     "unknown",
 ]
 
@@ -297,7 +298,7 @@ def main() -> None:
             "confusion": confusion,
             "purpose": (
                 "Route detector: brain_mri vs bone_xray vs chest_xray "
-                "vs retina_fundus vs unknown"
+                "vs retina_fundus vs skin_dermoscopy vs unknown"
             ),
         },
         MODEL_OUT,

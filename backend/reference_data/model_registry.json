@@ -34,7 +34,7 @@
     {
       "region": "skin",
       "modality": "dermoscopy",
-      "model_id": "skin_dermoscopy_placeholder"
+      "model_id": "skin_dermoscopy_resnet18"
     }
   ],
   "models": {
@@ -110,16 +110,16 @@
       "model_path": "",
       "ensemble_members": []
     },
-    "skin_dermoscopy_placeholder": {
-      "model_id": "skin_dermoscopy_placeholder",
+    "skin_dermoscopy_resnet18": {
+      "model_id": "skin_dermoscopy_resnet18",
       "version": "0.1.0",
-      "architecture": "placeholder",
+      "architecture": "resnet18",
       "region": "skin",
       "modality": "dermoscopy",
       "input_shape": [1, 3, 224, 224],
-      "status": "INACTIVE",
+      "status": "ACTIVE",
       "checksum": "",
-      "model_path": "",
+      "model_path": "reference_data/models/skin_dermoscopy_resnet18.pth",
       "ensemble_members": []
     }
   }

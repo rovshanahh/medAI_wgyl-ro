@@ -9,6 +9,7 @@ TEST_FILES = [
     "test_samples/chest_xray.jpg",
     "test_samples/random.jpg",
     "test_samples/retina_fundus.jpg",
+    "test_samples/skin_dermoscopy.jpg",
     "test_samples/test_chest_xray.dcm",
 ]
 

@@ -9,6 +9,7 @@ TEST_FILES = {
     "bone_xray": "test_samples/bone_xray.png",
     "chest_xray": "test_samples/chest_xray.jpg",
     "retina_fundus": "test_samples/retina_fundus.jpg",
+    "skin_dermoscopy": "test_samples/skin_dermoscopy.jpg",
     "unknown": "test_samples/random.jpg",
     "dicom_chest_xray": "test_samples/test_chest_xray.dcm",
 }

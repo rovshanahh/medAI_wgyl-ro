@@ -13,6 +13,7 @@ class RouteDetector:
         "chest_xray": ("chest", "xray"),
         "retina_fundus": ("retina", "fundus"),
         "unknown": (None, None),
+        "skin_dermoscopy": ("skin", "dermoscopy"),
     }
 
     MIN_CONFIDENCE = 0.80

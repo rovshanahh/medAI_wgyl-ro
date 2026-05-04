@@ -35,6 +35,7 @@ class Orchestrator:
         "bone_xray": "xray",
         "chest_xray": "xray",
         "retina_fundus": "fundus",
+        "skin_dermoscopy": "dermoscopy",
     }
 
     def __init__(self) -> None:
