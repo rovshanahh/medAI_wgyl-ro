@@ -52,7 +52,9 @@ class ExplainabilityEngine:
         if not target_layers:
             raise ValueError("No valid target layer found for explainability generation")
 
-        tensor = tensor.detach().float()
+        device = self._resolve_model_device()
+        tensor = tensor.detach().float().to(device)
+
         input_height = int(tensor.shape[-2])
         input_width = int(tensor.shape[-1])
 
@@ -91,14 +93,18 @@ class ExplainabilityEngine:
             "target_label": inference_result.get("top_label"),
         }
 
+    def _resolve_model_device(self) -> torch.device:
+        try:
+            return next(self.model.parameters()).device
+        except StopIteration:
+            return torch.device("cpu")
+
     def _resolve_target_layers(self):
-        # DenseNet121 — chest and bone models
         if hasattr(self.model, "densenet") and hasattr(self.model.densenet, "features"):
             features = self.model.densenet.features
             if len(features) > 0:
                 return [features[-1]]
 
-        # ResNet18 — brain MRI model
         if hasattr(self.model, "resnet") and hasattr(self.model.resnet, "layer4"):
             return [self.model.resnet.layer4[-1]]
 
@@ -116,20 +122,14 @@ class ExplainabilityEngine:
 
         output_size = int(output.shape[1])
 
-        # Bone binary model has one logit:
-        # positive logit → Abnormal
-        # negative logit → Normal
         if output_size == 1:
             is_abnormal = str(top_label).lower() == "abnormal"
             return [BinaryLogitTarget(positive=is_abnormal)]
 
-        # Multiclass / multilabel models:
-        # choose the index of top_label from probability keys if available.
         labels = list(probabilities.keys())
 
         if top_label in labels:
             return [ClassifierOutputTarget(labels.index(top_label))]
 
-        # Safe fallback: use highest raw model output.
         target_index = int(torch.argmax(output, dim=1).item())
         return [ClassifierOutputTarget(target_index)]

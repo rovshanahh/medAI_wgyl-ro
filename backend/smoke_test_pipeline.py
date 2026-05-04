@@ -4,10 +4,10 @@ from medalix.api.orchestrator import Orchestrator
 
 
 TEST_FILES = [
-    "test_samples/brain_mri.png",
+    "test_samples/brain_mri.jpg",
     "test_samples/bone_xray.png",
-    "test_samples/chest_xray.png",
-    "test_samples/random.png",
+    "test_samples/chest_xray.jpg",
+    "test_samples/random.jpg",
     "test_samples/test_chest_xray.dcm",
 ]
 

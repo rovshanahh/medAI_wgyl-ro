@@ -1,6 +1,7 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from medalix.api.orchestrator import Orchestrator
+from medalix.inference.ensemble_model import EnsembleModel
 
 router = APIRouter()
 orchestrator = Orchestrator()
@@ -20,6 +21,20 @@ def root():
         "message": "MedAIx backend is running",
         "supported_uploads": [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"],
         "routes": ["brain_mri", "bone_xray", "chest_xray", "unknown"],
+    }
+
+
+@router.get("/model-cache")
+def model_cache():
+    return EnsembleModel.cache_info()
+
+
+@router.post("/model-cache/clear")
+def clear_model_cache():
+    EnsembleModel.clear_cache()
+    return {
+        "status": "cleared",
+        "cache": EnsembleModel.cache_info(),
     }
 
 

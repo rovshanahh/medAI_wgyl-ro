@@ -59,8 +59,16 @@ class Orchestrator:
         return result
 
     def _finalize_and_store(self, state: PipelineState, payload: dict) -> dict:
+        payload = self._with_pipeline_debug(state, payload)
         self.session_store.save_result(state.analysis_id, payload)
         self.logger.info({"event": "result_stored", "analysis_id": state.analysis_id})
+        return payload
+
+    def _with_pipeline_debug(self, state: PipelineState, payload: dict) -> dict:
+        payload = dict(payload or {})
+        payload["pipeline_stages"] = list(state.stage_history)
+        payload["stage_events"] = list(state.stage_events)
+        payload["timing_summary"] = state.timing_summary()
         return payload
 
     def _prepare_working_content(self, filename: str, content: bytes) -> tuple[bytes, str, dict]:
@@ -214,6 +222,9 @@ class Orchestrator:
                 False,
             ),
             "ensemble_member_count": inference_result.get("ensemble_member_count"),
+            "mc_passes": inference_result.get("mc_passes"),
+            "model_cache_key": inference_result.get("model_cache_key"),
+            "device": inference_result.get("device"),
         }
 
     def _selected_model_payload(self, selected_model) -> dict:
@@ -256,6 +267,25 @@ class Orchestrator:
             pipeline_stages=state.stage_history,
         )
 
+    def _base_payload(self, state: PipelineState, message: str) -> dict:
+        return {
+            "analysis_id": state.analysis_id,
+            "filename": state.filename,
+            "content_type": state.content_type,
+            "size_bytes": state.size_bytes,
+            "input_gate": state.input_gate_result or {},
+            "detection": state.detection_result or {},
+            "routing": state.routing_result or {},
+            "quality": state.quality_result or {},
+            "ood": state.ood_result or {},
+            "explainability": state.explainability_result or {},
+            "selected_model": self._selected_model_payload(state.selected_model),
+            "policy": state.policy_result or {},
+            "warnings": state.warnings,
+            "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
+            "message": message,
+        }
+
     def _stop_before_inference(
         self,
         state: PipelineState,
@@ -285,23 +315,7 @@ class Orchestrator:
 
         return self._finalize_and_store(
             state,
-            {
-                "analysis_id": state.analysis_id,
-                "filename": state.filename,
-                "content_type": state.content_type,
-                "size_bytes": state.size_bytes,
-                "input_gate": state.input_gate_result,
-                "detection": state.detection_result,
-                "routing": state.routing_result,
-                "quality": state.quality_result,
-                "ood": state.ood_result,
-                "explainability": state.explainability_result,
-                "selected_model": self._selected_model_payload(state.selected_model),
-                "policy": state.policy_result,
-                "warnings": state.warnings,
-                "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
-                "message": "Analysis stopped before inference",
-            },
+            self._base_payload(state, "Analysis stopped before inference"),
         )
 
     def execute(self, filename: str, content_type: str | None, content: bytes) -> dict:
@@ -418,25 +432,10 @@ class Orchestrator:
 
                 return self._finalize_and_store(
                     state,
-                    {
-                        "analysis_id": state.analysis_id,
-                        "filename": state.filename,
-                        "content_type": state.content_type,
-                        "size_bytes": state.size_bytes,
-                        "input_gate": state.input_gate_result,
-                        "detection": state.detection_result,
-                        "routing": state.routing_result,
-                        "quality": state.quality_result,
-                        "ood": state.ood_result,
-                        "explainability": state.explainability_result,
-                        "selected_model": self._selected_model_payload(state.selected_model),
-                        "policy": state.policy_result,
-                        "warnings": state.warnings,
-                        "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
-                        "message": (
-                            "Analysis stopped because the routed model is not available yet"
-                        ),
-                    },
+                    self._base_payload(
+                        state,
+                        "Analysis stopped because the routed model is not available yet",
+                    ),
                 )
 
             state.selected_model = selected_model_metadata
@@ -461,14 +460,12 @@ class Orchestrator:
                     }
                 )
 
-                return self._finalize_and_store(
-                    state,
-                    ErrorResponseBuilder.build_processing_error(
-                        analysis_id=state.analysis_id,
-                        stage=state.current_stage,
-                        message=str(exc),
-                    ),
+                error_payload = ErrorResponseBuilder.build_processing_error(
+                    analysis_id=state.analysis_id,
+                    stage=state.current_stage,
+                    message=str(exc),
                 )
+                return self._finalize_and_store(state, error_payload)
 
             state.set_stage("ood")
             ood_detector = OODDetector()
@@ -540,33 +537,22 @@ class Orchestrator:
                 }
             )
 
-            payload = {
-                "analysis_id": state.analysis_id,
-                "filename": state.filename,
-                "content_type": state.content_type,
-                "size_bytes": state.size_bytes,
-                "input_gate": state.input_gate_result,
-                "detection": state.detection_result,
-                "quality": state.quality_result,
-                "ood": state.ood_result,
-                "routing": state.routing_result,
-                "selected_model": self._selected_model_payload(state.selected_model),
-                "explainability": state.explainability_result,
-                "policy": state.policy_result,
-                "warnings": state.warnings,
-                "disclaimer": NON_DIAGNOSTIC_DISCLAIMER,
-            }
+            payload = self._base_payload(
+                state,
+                (
+                    "Governed pipeline completed successfully"
+                    if policy_output.action != "STOP"
+                    else "Analysis stopped due to policy or distribution checks"
+                ),
+            )
 
             if policy_output.action != "STOP":
                 payload.update(
                     {
                         "tensor_shape": list(state.tensor.shape),
                         "inference": state.inference_result,
-                        "message": "Governed pipeline completed successfully",
                     }
                 )
-            else:
-                payload["message"] = "Analysis stopped due to policy or distribution checks"
 
             return self._finalize_and_store(state, payload)
 
@@ -581,14 +567,12 @@ class Orchestrator:
                 }
             )
 
-            return self._finalize_and_store(
-                state,
-                ErrorResponseBuilder.build_validation_error(
-                    analysis_id=state.analysis_id,
-                    stage=state.current_stage,
-                    message=str(exc),
-                ),
+            error_payload = ErrorResponseBuilder.build_validation_error(
+                analysis_id=state.analysis_id,
+                stage=state.current_stage,
+                message=str(exc),
             )
+            return self._finalize_and_store(state, error_payload)
 
         except Exception as exc:
             self.logger.error(
@@ -601,14 +585,12 @@ class Orchestrator:
                 }
             )
 
-            return self._finalize_and_store(
-                state,
-                ErrorResponseBuilder.build_processing_error(
-                    analysis_id=state.analysis_id,
-                    stage=state.current_stage,
-                    message=str(exc),
-                ),
+            error_payload = ErrorResponseBuilder.build_processing_error(
+                analysis_id=state.analysis_id,
+                stage=state.current_stage,
+                message=str(exc),
             )
+            return self._finalize_and_store(state, error_payload)
 
         finally:
             self.cleanup_coordinator.cleanup_temp_file(state.temp_path)
