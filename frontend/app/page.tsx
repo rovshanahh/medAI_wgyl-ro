@@ -345,6 +345,64 @@ export default function Home() {
               for research use.
             </p>
 
+            <div className="mt-10 grid gap-4 lg:grid-cols-2">
+              {[
+                [
+                  "brain_mri",
+                  "Brain MRI",
+                  "Reviews brain MRI images and returns the most likely tumor-related class.",
+                ],
+                [
+                  "bone_xray",
+                  "Bone X-ray",
+                  "Reviews bone X-ray images and separates normal from abnormal cases.",
+                ],
+                [
+                  "chest_xray",
+                  "Chest X-ray",
+                  "Reviews chest X-ray images and highlights possible visible findings.",
+                ],
+                [
+                  "retina_fundus",
+                  "Retina fundus",
+                  "Reviews eye fundus images and estimates diabetic retinopathy severity.",
+                ],
+              ].map(([route, title, description]) => (
+                <div
+                  key={route}
+                  className="group relative overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white px-5 py-4 shadow-[0_12px_30px_rgba(0,0,0,0.04)] transition hover:-translate-y-0.5 hover:border-red-100 hover:shadow-[0_18px_42px_rgba(239,68,68,0.09)]"
+                >
+                  <div className="absolute -right-14 -top-16 h-32 w-32 rounded-full bg-red-50/70 blur-md transition group-hover:scale-125" />
+                  <div className="absolute -bottom-16 -left-16 h-32 w-32 rounded-full bg-zinc-50 blur-md" />
+
+                  <div className="relative flex items-center justify-between gap-6">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold tracking-tight text-zinc-900">
+                        {title}
+                      </p>
+
+                      <p className="mt-2 text-xs leading-5 text-zinc-500">
+                        {description}
+                      </p>
+                    </div>
+
+                    <div className="hidden shrink-0 text-right sm:block">
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">
+                        Route
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-zinc-700">
+                        {formatLabel(route)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="relative mt-4 h-px w-full bg-zinc-100">
+                    <div className="h-px w-16 bg-gradient-to-r from-red-200 via-red-300 to-transparent transition-all group-hover:w-28" />
+                  </div>
+                </div>
+              ))}
+            </div>
+
             <div className="mt-8 flex gap-3">
               <button
                 onClick={handleAnalyze}

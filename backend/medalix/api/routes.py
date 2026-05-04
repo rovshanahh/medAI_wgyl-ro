@@ -20,7 +20,72 @@ def root():
     return {
         "message": "MedAIx backend is running",
         "supported_uploads": [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"],
-        "routes": ["brain_mri", "bone_xray", "chest_xray", "unknown"],
+        "routes": ["brain_mri", "bone_xray", "chest_xray", "retina_fundus", "unknown"],
+    }
+
+
+@router.get("/routes")
+def routes():
+    return {
+        "active_routes": [
+            {
+                "route": "brain_mri",
+                "region": "brain",
+                "modality": "mri",
+                "model": "brain_mri_resnet18",
+                "status": "ACTIVE",
+            },
+            {
+                "route": "bone_xray",
+                "region": "bone",
+                "modality": "xray",
+                "model": "bone_xray_standard",
+                "status": "ACTIVE",
+            },
+            {
+                "route": "chest_xray",
+                "region": "chest",
+                "modality": "xray",
+                "model": "chest_xray_mvp",
+                "status": "ACTIVE",
+            },
+            {
+                "route": "retina_fundus",
+                "region": "retina",
+                "modality": "fundus",
+                "model": "retina_fundus_resnet18",
+                "status": "ACTIVE",
+            },
+        ],
+        "safety_routes": [
+            {
+                "route": "unknown",
+                "region": None,
+                "modality": None,
+                "model": None,
+                "status": "STOP_BEFORE_INFERENCE",
+            }
+        ],
+        "inactive_placeholders": [
+            {
+                "route": "abdomen_ct",
+                "region": "abdomen",
+                "modality": "ct",
+                "status": "INACTIVE",
+            },
+            {
+                "route": "breast_mammography",
+                "region": "breast",
+                "modality": "mammography",
+                "status": "INACTIVE",
+            },
+            {
+                "route": "skin_dermoscopy",
+                "region": "skin",
+                "modality": "dermoscopy",
+                "status": "INACTIVE",
+            },
+        ],
     }
 
 
