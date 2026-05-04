@@ -17,16 +17,18 @@ This project is for research and educational use only. Outputs are non-diagnosti
   - brain_mri
   - bone_xray
   - chest_xray
+  - retina_fundus
   - unknown
 - Stops unsupported, unknown, or low-confidence inputs before inference
-- Routes supported images to one of three active pipelines:
-  - Chest X-ray — 14-label multilabel classification (DenseNet121, CheXpert)
-  - Bone X-ray — Normal / Abnormal binary classification (DenseNet121, MURA)
-  - Brain MRI — 4-class tumor classification: Glioma, Meningioma, No Tumor, Pituitary (ResNet18)
+- Routes supported images to one of four active medical pipelines:
+  - Brain MRI — 4-class tumor classification: Glioma, Meningioma, No Tumor, Pituitary
+  - Bone X-ray — Normal / Abnormal binary classification
+  - Chest X-ray — 14-label multilabel classification using CheXpert labels
+  - Retina fundus — 5-class diabetic retinopathy severity classification
 - Runs MC dropout inference with epistemic and aleatoric uncertainty estimation
-- Generates Grad-CAM++ heatmaps for all three active routes
+- Generates Grad-CAM++ heatmaps for all active routes
 - Evaluates pipeline signals through a governed decision policy: ANSWER / REFUSE / ESCALATE / REQUEST_EVIDENCE / STOP
-- Returns a structured response including route result, detected region and modality, selected model, quality check, OOD status, uncertainty metrics, explainability output, warnings, and policy decision
+- Returns a structured response including route result, detected region and modality, selected model, quality check, OOD status, uncertainty metrics, explainability output, warnings, policy decision, and pipeline timing data
 
 ---
 
@@ -35,13 +37,24 @@ This project is for research and educational use only. Outputs are non-diagnosti
 | Route | Region | Modality | Inference | Heatmap | Status |
 |-------|--------|----------|-----------|---------|--------|
 | brain_mri | Brain | MRI | 4-class tumor classification | Grad-CAM++ | Active |
-| bone_xray | Bone | X-ray | Normal / Abnormal | Grad-CAM++ | Active |
+| bone_xray | Bone | X-ray | Normal / Abnormal classification | Grad-CAM++ | Active |
 | chest_xray | Chest | X-ray | 14-label multilabel classification | Grad-CAM++ | Active |
+| retina_fundus | Retina | Fundus | 5-class diabetic retinopathy severity classification | Grad-CAM++ | Active |
 | unknown | — | — | STOP before inference | — | Active safety route |
 | abdomen_ct | Abdomen | CT | — | — | Placeholder |
 | breast_mammography | Breast | Mammography | — | — | Placeholder |
 | skin_dermoscopy | Skin | Dermoscopy | — | — | Placeholder |
-| retina_fundus | Retina | Fundus | — | — | Placeholder |
+
+---
+
+## Active model summary
+
+| Model ID | Route | Architecture | Dataset / Source | Status |
+|----------|-------|--------------|------------------|--------|
+| brain_mri_resnet18 | brain_mri | ResNet18 | Kaggle Brain Tumor MRI Dataset | Active |
+| bone_xray_standard | bone_xray | DenseNet121 | MURA | Active |
+| chest_xray_mvp | chest_xray | DenseNet121 | CheXpert pretrained model | Active |
+| retina_fundus_resnet18 | retina_fundus | ResNet18 | APTOS 2019 Blindness Detection | Active |
 
 ---
 
@@ -49,12 +62,13 @@ This project is for research and educational use only. Outputs are non-diagnosti
 
 Current implemented checks:
 
-- Multiclass route detector supports brain_mri, bone_xray, chest_xray, and unknown
+- Multiclass route detector supports brain_mri, bone_xray, chest_xray, retina_fundus, and unknown
 - Unknown/random images are stopped before inference
-- Brain MRI, bone X-ray, chest X-ray, and DICOM test inputs run through the governed pipeline
+- Brain MRI, bone X-ray, chest X-ray, retina fundus, and DICOM test inputs run through the governed pipeline
 - Grad-CAM++ is supported for DenseNet-based and ResNet-based models
 - Temporary uploaded files are deleted after processing
-- The frontend displays route probabilities, selected model, inference result, OOD status, policy action, and heatmap when available
+- The frontend displays route probabilities, model output probabilities, selected model, inference result, OOD status, policy action, and heatmap when available
+- The backend exposes route/configuration metadata through `/config` and `/routes`
 
 Smoke test script:
 
@@ -63,11 +77,21 @@ Smoke test script:
 
 Expected smoke test scenarios:
 
-- Brain MRI sample → brain_mri route → brain_mri_resnet18
-- Bone X-ray sample → bone_xray route → bone_xray_standard
-- Chest X-ray sample → chest_xray route → chest_xray_mvp
+- Brain MRI sample → brain_mri route → brain_mri_resnet18 → inference + heatmap
+- Bone X-ray sample → bone_xray route → bone_xray_standard → inference + heatmap
+- Chest X-ray sample → chest_xray route → chest_xray_mvp → inference + heatmap
+- Retina fundus sample → retina_fundus route → retina_fundus_resnet18 → inference + heatmap
 - Random image → unknown route → STOP before inference
-- DICOM sample → converted → routed → inference
+- DICOM sample → converted → routed → inference + heatmap
+
+Compact evaluation script:
+
+    cd backend
+    python3 evaluate_active_routes.py
+
+The compact evaluation script prints a table and saves:
+
+    evaluation/active_route_evaluation.json
 
 ---
 
@@ -88,9 +112,21 @@ Expected smoke test scenarios:
     mkdir -p logs/heatmaps temp_uploads
     uvicorn main:app --reload --port 8000
 
-Backend runs at: http://localhost:8000
+Backend runs at:
 
-Health check: http://localhost:8000/health
+    http://localhost:8000
+
+Health check:
+
+    http://localhost:8000/health
+
+Configuration endpoint:
+
+    http://localhost:8000/config
+
+Routes endpoint:
+
+    http://localhost:8000/routes
 
 ### Frontend
 
@@ -98,7 +134,17 @@ Health check: http://localhost:8000/health
     npm install
     npm run dev
 
-Frontend runs at: http://localhost:3000
+Frontend runs at:
+
+    http://localhost:3000
+
+Optional frontend environment file:
+
+    frontend/.env.local
+
+Example:
+
+    NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 
 Make sure the backend is running before using the frontend.
 
@@ -110,6 +156,10 @@ Make sure the backend is running before using the frontend.
 |----------|--------|---------|
 | / | GET | Backend status message |
 | /health | GET | Health check |
+| /config | GET | Supported uploads, active routes, safety routes, disclaimer |
+| /routes | GET | Active routes, safety route, inactive placeholders |
+| /model-cache | GET | View cached loaded models |
+| /model-cache/clear | POST | Clear cached loaded models |
 | /analyze | POST | Upload and analyze image |
 | /result/{analysis_id} | GET | Retrieve stored analysis result |
 | /heatmaps/{filename} | GET | Serve generated Grad-CAM++ heatmap |
@@ -124,19 +174,22 @@ Expected local route dataset structure:
 
     datasets/routing/
     ├── train/
-    │   ├── brain_mri/
     │   ├── bone_xray/
+    │   ├── brain_mri/
     │   ├── chest_xray/
+    │   ├── retina_fundus/
     │   └── unknown/
     ├── val/
-    │   ├── brain_mri/
     │   ├── bone_xray/
+    │   ├── brain_mri/
     │   ├── chest_xray/
+    │   ├── retina_fundus/
     │   └── unknown/
     └── test/
-        ├── brain_mri/
         ├── bone_xray/
+        ├── brain_mri/
         ├── chest_xray/
+        ├── retina_fundus/
         └── unknown/
 
 Training scripts:
@@ -144,9 +197,75 @@ Training scripts:
     cd backend
     python3 prepare_routing_dataset.py
     python3 prepare_unknown_routing_images.py
+    python3 prepare_retina_routing_dataset.py
     python3 train_route_detector.py
 
 The trained route detector is saved at:
+
+    backend/reference_data/route_detector/route_detector_model.pth
+
+---
+
+## Train specialist models
+
+Model checkpoint files may be large. Some are generated locally from datasets, while the chest X-ray model is loaded from Hugging Face.
+
+### Brain MRI model
+
+Dataset:
+
+    https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset
+
+Expected local path:
+
+    backend/raw_datasets/brain-tumor-mri-dataset/
+
+Train:
+
+    cd backend
+    python3 train_brain_mri.py
+
+Model path:
+
+    backend/models/brain/brain_mri_resnet18.pth
+
+### Retina fundus model
+
+Dataset:
+
+    APTOS 2019 Blindness Detection
+
+Expected local path:
+
+    backend/raw_datasets/aptos2019/
+
+Expected files/folders:
+
+    raw_datasets/aptos2019/
+    ├── train_images/
+    ├── val_images/
+    ├── test_images/
+    ├── train_1.csv
+    ├── valid.csv
+    └── test.csv
+
+Train:
+
+    cd backend
+    python3 train_retina_fundus.py
+
+Model path:
+
+    backend/reference_data/models/retina_fundus_resnet18.pth
+
+### Route detector
+
+Train:
+
+    cd backend
+    python3 train_route_detector.py
+
+Model path:
 
     backend/reference_data/route_detector/route_detector_model.pth
 
@@ -161,14 +280,18 @@ The active specialist models are:
 | chest_xray_mvp | chest_xray | CheXpert pretrained DenseNet121 |
 | bone_xray_standard | bone_xray | MURA |
 | brain_mri_resnet18 | brain_mri | Kaggle Brain Tumor MRI Dataset |
-
-Brain MRI dataset:
-
-    https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset
+| retina_fundus_resnet18 | retina_fundus | APTOS 2019 Blindness Detection |
 
 Expected local raw dataset examples:
 
     backend/raw_datasets/
+    ├── aptos2019/
+    │   ├── train_images/
+    │   ├── val_images/
+    │   ├── test_images/
+    │   ├── train_1.csv
+    │   ├── valid.csv
+    │   └── test.csv
     ├── brain-tumor-mri-dataset/
     │   ├── Training/
     │   └── Testing/
@@ -180,7 +303,7 @@ Expected local raw dataset examples:
         ├── train/
         └── valid/
 
-Large raw datasets are not stored in the repository.
+Large raw datasets are not stored in this repository.
 
 Ignored local folders include:
 
@@ -200,13 +323,23 @@ For current full-pipeline checks:
     source venv/bin/activate
     python3 smoke_test_pipeline.py
 
+For compact active-route evaluation:
+
+    cd backend
+    source venv/bin/activate
+    python3 evaluate_active_routes.py
+
+The active route evaluation report is saved to:
+
+    evaluation/active_route_evaluation.json
+
 Older chest-specific evaluation can still be run if the evaluation folder is prepared:
 
     cd backend
     source venv/bin/activate
     python3 evaluate_chest_mvp.py
 
-Results are saved to:
+Chest-specific results are saved to:
 
     evaluation/evaluation_results.json
 
@@ -218,6 +351,10 @@ Results are saved to:
     ├── backend/
     │   ├── main.py
     │   ├── smoke_test_pipeline.py
+    │   ├── evaluate_active_routes.py
+    │   ├── train_route_detector.py
+    │   ├── train_retina_fundus.py
+    │   ├── prepare_retina_routing_dataset.py
     │   ├── medalix/
     │   │   ├── api/                   # Orchestrator, routes, pipeline state, session store
     │   │   ├── ingestion/             # Validation and DICOM conversion
@@ -234,8 +371,10 @@ Results are saved to:
     │   ├── reference_data/
     │   │   ├── model_registry.json
     │   │   ├── policy_thresholds.json
-    │   │   └── route_detector/
-    │   │       └── route_detector_model.pth
+    │   │   ├── route_detector/
+    │   │   │   └── route_detector_model.pth
+    │   │   └── models/
+    │   │       └── retina_fundus_resnet18.pth
     │   └── evaluation/
     ├── frontend/
     │   └── app/
@@ -250,9 +389,9 @@ Every image passes through the following stages in order:
 
 1. Ingestion validation — file format, header integrity, size limits, and readability checks
 2. Format preparation — DICOM files are converted into PNG-compatible image bytes
-3. Route detection — multiclass route detector predicts brain_mri, bone_xray, chest_xray, or unknown
+3. Route detection — multiclass route detector predicts brain_mri, bone_xray, chest_xray, retina_fundus, or unknown
 4. Safety stop — unknown or low-confidence routes stop before inference
-5. Preprocessing — image resizing, grayscale/RGB handling, and normalization
+5. Preprocessing — modality-aware resizing, grayscale/RGB handling, and normalization
 6. Quality assessment — tensor validity, resolution, contrast warning signals, and corruption indicators
 7. Model registry — deterministic route-to-model resolution
 8. Inference — specialist model inference with MC dropout uncertainty estimation
@@ -270,14 +409,18 @@ The frontend supports:
 - Image upload for .png, .jpg, .jpeg, .tif, .tiff, and .dcm
 - Browser preview for normal image files
 - DICOM placeholder display for .dcm files
+- Route-aware review titles
+- Supported-route cards loaded from backend `/config`
 - Route detector result display
 - Route probability display
+- Model output probability display
 - Selected model display
-- Primary finding and confidence display when inference runs
+- Model output and confidence display when inference runs
 - “No inference was run” display for stopped inputs
 - OOD method and reason display
 - Grad-CAM++ heatmap display when available
 - Policy action and safety warnings
+- Environment-based backend URL through `NEXT_PUBLIC_BACKEND_URL`
 
 ---
 
@@ -299,6 +442,7 @@ Audit records include:
 - explainability result
 - final policy action
 - pipeline stages
+- timing summary
 - DICOM conversion status when applicable
 
 Temporary uploaded files are deleted after processing. Generated heatmaps and audit logs are stored under logs/.
@@ -313,6 +457,7 @@ This project is an academic MVP and has important limitations:
 - It must not be used for clinical decision-making.
 - Route detection is limited to the currently trained classes.
 - DICOM support is implemented through pixel extraction and image conversion, not full clinical DICOM metadata reasoning.
+- CT, mammography, dermoscopy, and other future modalities are placeholders unless explicitly activated in the registry and inference layer.
 - OOD checking is conservative and route-safe, but not a complete medical safety guarantee.
 - Model outputs are intended for research, education, and demonstration only.
 
