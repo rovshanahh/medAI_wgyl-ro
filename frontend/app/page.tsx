@@ -14,6 +14,24 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+type AppConfig = {
+  supported_uploads?: string[];
+  active_routes?: {
+    route: string;
+    region: string;
+    modality: string;
+    model: string;
+    description: string;
+    status: string;
+  }[];
+  safety_routes?: {
+    route: string;
+    description: string;
+    status: string;
+  }[];
+  disclaimer?: string;
+};
+
 type AnalysisResponse = {
   filename?: string;
   input_gate?: {
@@ -98,9 +116,50 @@ type AnalysisResponse = {
   message?: string;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
 const BACKEND_URL = `${API_BASE_URL}/analyze`;
 const HEATMAP_BASE_URL = API_BASE_URL;
+
+const FALLBACK_ROUTES = [
+  {
+    route: "brain_mri",
+    region: "brain",
+    modality: "mri",
+    model: "brain_mri_resnet18",
+    description:
+      "Reviews brain MRI images and returns the most likely tumor-related class.",
+    status: "ACTIVE",
+  },
+  {
+    route: "bone_xray",
+    region: "bone",
+    modality: "xray",
+    model: "bone_xray_standard",
+    description:
+      "Reviews bone X-ray images and separates normal from abnormal cases.",
+    status: "ACTIVE",
+  },
+  {
+    route: "chest_xray",
+    region: "chest",
+    modality: "xray",
+    model: "chest_xray_mvp",
+    description:
+      "Reviews chest X-ray images and highlights possible visible findings.",
+    status: "ACTIVE",
+  },
+  {
+    route: "retina_fundus",
+    region: "retina",
+    modality: "fundus",
+    model: "retina_fundus_resnet18",
+    description:
+      "Reviews eye fundus images and estimates diabetic retinopathy severity.",
+    status: "ACTIVE",
+  },
+];
 
 function formatPercent(value?: number | null) {
   if (value == null) return "—";
@@ -132,6 +191,10 @@ function getRouteTitle(route?: string | null) {
     default:
       return "Medical image review";
   }
+}
+
+function getRouteCardTitle(route?: string | null) {
+  return getRouteTitle(route).replace(" review", "");
 }
 
 function getOutputLabel(route?: string | null) {
@@ -194,6 +257,7 @@ function getRouteTone(route?: string | null) {
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -210,6 +274,23 @@ export default function Home() {
     };
   }, [previewUrl]);
 
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/config`);
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        setAppConfig(data);
+      } catch {
+        setAppConfig(null);
+      }
+    };
+
+    loadConfig();
+  }, []);
+
   const heatmapUrl = useMemo(() => {
     const rawPath = result?.explainability?.heatmap_path;
 
@@ -221,6 +302,15 @@ export default function Home() {
 
     return `${HEATMAP_BASE_URL}${rawPath}`;
   }, [result]);
+
+  const activeRoutes = appConfig?.active_routes?.length
+    ? appConfig.active_routes
+    : FALLBACK_ROUTES;
+
+  const supportedUploads =
+    appConfig?.supported_uploads?.length
+      ? appConfig.supported_uploads.join(", ").replaceAll(".", "").toUpperCase()
+      : "PNG, JPG, TIFF, DICOM";
 
   const routeDetector = result?.input_gate?.top_level_gate?.route_detector;
   const conversion = result?.input_gate?.top_level_gate?.conversion;
@@ -347,30 +437,9 @@ export default function Home() {
             </p>
 
             <div className="mt-10 grid gap-4 lg:grid-cols-2">
-              {[
-                [
-                  "brain_mri",
-                  "Brain MRI",
-                  "Reviews brain MRI images and returns the most likely tumor-related class.",
-                ],
-                [
-                  "bone_xray",
-                  "Bone X-ray",
-                  "Reviews bone X-ray images and separates normal from abnormal cases.",
-                ],
-                [
-                  "chest_xray",
-                  "Chest X-ray",
-                  "Reviews chest X-ray images and highlights possible visible findings.",
-                ],
-                [
-                  "retina_fundus",
-                  "Retina fundus",
-                  "Reviews eye fundus images and estimates diabetic retinopathy severity.",
-                ],
-              ].map(([route, title, description]) => (
+              {activeRoutes.map((routeInfo) => (
                 <div
-                  key={route}
+                  key={routeInfo.route}
                   className="group relative overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white px-5 py-4 shadow-[0_12px_30px_rgba(0,0,0,0.04)] transition hover:-translate-y-0.5 hover:border-red-100 hover:shadow-[0_18px_42px_rgba(239,68,68,0.09)]"
                 >
                   <div className="absolute -right-14 -top-16 h-32 w-32 rounded-full bg-red-50/70 blur-md transition group-hover:scale-125" />
@@ -379,11 +448,11 @@ export default function Home() {
                   <div className="relative flex items-center justify-between gap-6">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold tracking-tight text-zinc-900">
-                        {title}
+                        {getRouteCardTitle(routeInfo.route)}
                       </p>
 
                       <p className="mt-2 text-xs leading-5 text-zinc-500">
-                        {description}
+                        {routeInfo.description}
                       </p>
                     </div>
 
@@ -392,7 +461,7 @@ export default function Home() {
                         Route
                       </p>
                       <p className="mt-1 text-xs font-medium text-zinc-700">
-                        {formatLabel(route)}
+                        {formatLabel(routeInfo.route)}
                       </p>
                     </div>
                   </div>
@@ -438,7 +507,7 @@ export default function Home() {
               </span>
 
               <span className="mt-2 text-xs text-zinc-500">
-                Supported: PNG, JPG, TIFF, DICOM
+                Supported: {supportedUploads}
               </span>
 
               <input
@@ -763,6 +832,7 @@ export default function Home() {
 
                     <p className="mt-4 text-sm leading-7 text-zinc-600">
                       {result.disclaimer ||
+                        appConfig?.disclaimer ||
                         "This platform is intended solely for research and educational use. Outputs are non-diagnostic and must not be used for clinical decision-making."}
                     </p>
                   </div>
