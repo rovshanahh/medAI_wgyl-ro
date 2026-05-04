@@ -1,7 +1,5 @@
 import json
-
 from pathlib import Path
-from statistics import mean
 
 from medalix.api.orchestrator import Orchestrator
 
@@ -14,6 +12,8 @@ TEST_FILES = {
     "unknown": "test_samples/random.jpg",
     "dicom_chest_xray": "test_samples/test_chest_xray.dcm",
 }
+
+OUTPUT_PATH = Path("evaluation/active_route_evaluation.json")
 
 
 def format_percent(value):
@@ -47,6 +47,9 @@ def run_case(orchestrator: Orchestrator, expected_route: str, file_path: str) ->
             "output": "—",
             "confidence": "—",
             "heatmap": "—",
+            "message": "Test file missing",
+            "stage_count": 0,
+            "timing_count": 0,
         }
 
     result = orchestrator.execute(
@@ -61,6 +64,7 @@ def run_case(orchestrator: Orchestrator, expected_route: str, file_path: str) ->
     output = safe_get(result, "inference", "top_label", default="No inference")
     confidence = safe_get(result, "inference", "top_probability", default=None)
     heatmap = safe_get(result, "explainability", "heatmap_path", default=None)
+    message = result.get("message", "—")
 
     stage_count = len(result.get("pipeline_stages", []))
     timing_summary = result.get("timing_summary", [])
@@ -74,7 +78,10 @@ def run_case(orchestrator: Orchestrator, expected_route: str, file_path: str) ->
         "policy": policy,
         "output": output,
         "confidence": format_percent(confidence),
+        "raw_confidence": confidence,
         "heatmap": "Yes" if heatmap else "No",
+        "heatmap_path": heatmap,
+        "message": message,
         "stage_count": stage_count,
         "timing_count": len(timing_summary),
     }
@@ -123,20 +130,42 @@ def print_table(rows: list[dict]) -> None:
     print("=" * 100)
 
 
-def print_checks(rows: list[dict]) -> None:
+def build_summary(rows: list[dict]) -> dict:
     total = len(rows)
     completed = sum(1 for row in rows if row["status"] == "OK")
     heatmaps = sum(1 for row in rows if row["heatmap"] == "Yes")
     stopped = sum(1 for row in rows if row["policy"] == "STOP")
     answered = sum(1 for row in rows if row["policy"] == "ANSWER")
 
+    return {
+        "total_cases": total,
+        "completed_cases": completed,
+        "answer_decisions": answered,
+        "stop_decisions": stopped,
+        "heatmaps_generated": heatmaps,
+        "expected_behavior": {
+            "active_medical_routes": "Should produce inference and heatmap",
+            "unknown_random_input": "Should STOP before inference",
+            "dicom_input": "Should convert, route, infer, and generate heatmap",
+        },
+        "rows": rows,
+    }
+
+
+def print_checks(summary: dict) -> None:
     print("\nChecks:")
-    print(f"- Completed cases: {completed}/{total}")
-    print(f"- ANSWER decisions: {answered}")
-    print(f"- STOP decisions: {stopped}")
-    print(f"- Heatmaps generated: {heatmaps}")
+    print(f"- Completed cases: {summary['completed_cases']}/{summary['total_cases']}")
+    print(f"- ANSWER decisions: {summary['answer_decisions']}")
+    print(f"- STOP decisions: {summary['stop_decisions']}")
+    print(f"- Heatmaps generated: {summary['heatmaps_generated']}")
     print("- Unknown/random input should STOP before inference.")
     print("- Active medical routes should produce inference and heatmap.")
+
+
+def save_report(summary: dict) -> None:
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT_PATH.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"\nSaved evaluation report to: {OUTPUT_PATH}")
 
 
 def main() -> None:
@@ -147,23 +176,11 @@ def main() -> None:
         row = run_case(orchestrator, expected_route, file_path)
         rows.append(row)
 
+    summary = build_summary(rows)
+
     print_table(rows)
-    print_checks(rows)
-
-    output_path = Path("evaluation/active_route_evaluation.json")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    summary = {
-        "total_cases": len(rows),
-        "completed_cases": sum(1 for row in rows if row["status"] == "OK"),
-        "answer_decisions": sum(1 for row in rows if row["policy"] == "ANSWER"),
-        "stop_decisions": sum(1 for row in rows if row["policy"] == "STOP"),
-        "heatmaps_generated": sum(1 for row in rows if row["heatmap"] == "Yes"),
-        "rows": rows,
-    }
-
-    output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"\nSaved evaluation report to: {output_path}")
+    print_checks(summary)
+    save_report(summary)
 
 
 if __name__ == "__main__":
