@@ -11,6 +11,7 @@ class RouteDetector:
         "brain_mri": ("brain", "mri"),
         "bone_xray": ("bone", "xray"),
         "chest_xray": ("chest", "xray"),
+        "retina_fundus": ("retina", "fundus"),
         "unknown": (None, None),
     }
 
@@ -32,6 +33,18 @@ class RouteDetector:
             raise ValueError("Route detector checkpoint is missing model_state_dict.")
 
         self.class_names = checkpoint["class_names"]
+
+        missing_mappings = [
+            class_name
+            for class_name in self.class_names
+            if class_name not in self.ROUTE_TO_REGION_MODALITY
+        ]
+
+        if missing_mappings:
+            raise ValueError(
+                "Route detector has class names without route mappings: "
+                + ", ".join(missing_mappings)
+            )
 
         self.model = models.resnet18(weights=None)
         self.model.fc = nn.Linear(self.model.fc.in_features, len(self.class_names))

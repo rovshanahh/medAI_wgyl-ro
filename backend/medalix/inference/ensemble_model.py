@@ -39,6 +39,14 @@ BRAIN_MRI_LABELS = [
     "Pituitary",
 ]
 
+RETINA_FUNDUS_LABELS = [
+    "No DR",
+    "Mild",
+    "Moderate",
+    "Severe",
+    "Proliferative DR",
+]
+
 CHEST_REPO_ID = "itsomk/chexpert-densenet121"
 CHEST_FILENAME = "pytorch_model.safetensors"
 
@@ -111,8 +119,8 @@ class BoneDenseNet121Binary(nn.Module):
         return logits, features
 
 
-class BrainMriResNet18(nn.Module):
-    def __init__(self, num_classes: int = 4, dropout_p: float = 0.2):
+class ResNet18Classifier(nn.Module):
+    def __init__(self, num_classes: int, dropout_p: float = 0.2):
         super().__init__()
         self.resnet = models.resnet18(weights=None)
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_classes)
@@ -142,6 +150,16 @@ class BrainMriResNet18(nn.Module):
         return logits, features
 
 
+class BrainMriResNet18(ResNet18Classifier):
+    def __init__(self, num_classes: int = 4, dropout_p: float = 0.2):
+        super().__init__(num_classes=num_classes, dropout_p=dropout_p)
+
+
+class RetinaFundusResNet18(ResNet18Classifier):
+    def __init__(self, num_classes: int = 5, dropout_p: float = 0.2):
+        super().__init__(num_classes=num_classes, dropout_p=dropout_p)
+
+
 def load_chest_xray_model(device: torch.device) -> DenseNet121Classifier:
     local_path = hf_hub_download(repo_id=CHEST_REPO_ID, filename=CHEST_FILENAME)
     state = load_file(local_path)
@@ -164,6 +182,18 @@ def _remap_bone_state_dict_keys(state_dict: dict) -> dict:
             new_key = f"densenet.{key}"
 
         remapped[new_key] = value
+
+    return remapped
+
+
+def _remap_resnet_state_dict_keys(state_dict: dict) -> dict:
+    remapped = {}
+
+    for key, value in state_dict.items():
+        if not key.startswith("resnet."):
+            remapped[f"resnet.{key}"] = value
+        else:
+            remapped[key] = value
 
     return remapped
 
@@ -206,16 +236,35 @@ def load_brain_mri_model(model_path: str, device: torch.device) -> BrainMriResNe
         state_dict = checkpoint
         num_classes = 4
 
-    remapped = {}
-
-    for key, value in state_dict.items():
-        if not key.startswith("resnet."):
-            remapped[f"resnet.{key}"] = value
-        else:
-            remapped[key] = value
+    state_dict = _remap_resnet_state_dict_keys(state_dict)
 
     model = BrainMriResNet18(num_classes=num_classes, dropout_p=0.2)
-    model.load_state_dict(remapped, strict=True)
+    model.load_state_dict(state_dict, strict=True)
+    model.to(device)
+    model.eval()
+
+    return model
+
+
+def load_retina_fundus_model(model_path: str, device: torch.device) -> RetinaFundusResNet18:
+    checkpoint_path = Path(model_path)
+
+    if not checkpoint_path.exists():
+        raise ValueError(f"Retina fundus model checkpoint not found at: {model_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        num_classes = int(checkpoint.get("num_classes", len(RETINA_FUNDUS_LABELS)))
+    else:
+        state_dict = checkpoint
+        num_classes = len(RETINA_FUNDUS_LABELS)
+
+    state_dict = _remap_resnet_state_dict_keys(state_dict)
+
+    model = RetinaFundusResNet18(num_classes=num_classes, dropout_p=0.2)
+    model.load_state_dict(state_dict, strict=True)
     model.to(device)
     model.eval()
 
@@ -292,9 +341,22 @@ class EnsembleModel:
             }
 
         if region == "brain" and modality == "mri":
+            if architecture != "resnet18":
+                raise ValueError(f"Unsupported architecture for brain MRI route: {architecture}")
+
             return {
                 "model": load_brain_mri_model(self._model_path(), self.device),
                 "labels": BRAIN_MRI_LABELS,
+                "task_type": "multiclass",
+            }
+
+        if region == "retina" and modality == "fundus":
+            if architecture != "resnet18":
+                raise ValueError(f"Unsupported architecture for retina fundus route: {architecture}")
+
+            return {
+                "model": load_retina_fundus_model(self._model_path(), self.device),
+                "labels": RETINA_FUNDUS_LABELS,
                 "task_type": "multiclass",
             }
 

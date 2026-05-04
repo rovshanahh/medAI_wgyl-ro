@@ -26,6 +26,7 @@ EXPECTED_CLASSES = [
     "bone_xray",
     "brain_mri",
     "chest_xray",
+    "retina_fundus",
     "unknown",
 ]
 
@@ -101,6 +102,18 @@ def build_loaders():
     if train_ds.classes != EXPECTED_CLASSES:
         raise ValueError(
             f"Unexpected class order: {train_ds.classes}. "
+            f"Expected: {EXPECTED_CLASSES}"
+        )
+
+    if val_ds.classes != EXPECTED_CLASSES:
+        raise ValueError(
+            f"Unexpected val class order: {val_ds.classes}. "
+            f"Expected: {EXPECTED_CLASSES}"
+        )
+
+    if test_ds.classes != EXPECTED_CLASSES:
+        raise ValueError(
+            f"Unexpected test class order: {test_ds.classes}. "
             f"Expected: {EXPECTED_CLASSES}"
         )
 
@@ -222,7 +235,7 @@ def main() -> None:
     print(f"Val size:   {len(val_ds)}")
     print(f"Test size:  {len(test_ds)}")
 
-    model = build_model(device, num_classes=len(train_ds.classes))
+    model = build_model(device, num_classes=len(EXPECTED_CLASSES))
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
@@ -282,7 +295,10 @@ def main() -> None:
             "best_val_acc": best_val_acc,
             "test_acc": test_acc,
             "confusion": confusion,
-            "purpose": "Route detector: brain_mri vs bone_xray vs chest_xray vs unknown",
+            "purpose": (
+                "Route detector: brain_mri vs bone_xray vs chest_xray "
+                "vs retina_fundus vs unknown"
+            ),
         },
         MODEL_OUT,
     )
