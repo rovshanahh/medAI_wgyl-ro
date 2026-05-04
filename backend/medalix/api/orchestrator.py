@@ -30,6 +30,13 @@ NON_DIAGNOSTIC_DISCLAIMER = (
 
 
 class Orchestrator:
+    ROUTE_TO_PREPROCESSING_MODALITY = {
+        "brain_mri": "mri",
+        "bone_xray": "xray",
+        "chest_xray": "xray",
+        "retina_fundus": "fundus",
+    }
+
     def __init__(self) -> None:
         self.logger = Logger()
         self.trace_builder = AuditTraceBuilder()
@@ -57,6 +64,9 @@ class Orchestrator:
             self.logger.info({"event": "result_lookup_hit", "analysis_id": analysis_id})
 
         return result
+
+    def _resolve_preprocessing_modality(self, selected_route: str) -> str:
+        return self.ROUTE_TO_PREPROCESSING_MODALITY.get(selected_route, "xray")
 
     def _finalize_and_store(self, state: PipelineState, payload: dict) -> dict:
         payload = self._with_pipeline_debug(state, payload)
@@ -127,9 +137,7 @@ class Orchestrator:
             "region": route_result.get("region"),
             "modality": route_result.get("modality"),
             "confidence": route_result.get("confidence"),
-            "requires_confirmation": bool(
-                route_result.get("requires_confirmation", True)
-            ),
+            "requires_confirmation": bool(route_result.get("requires_confirmation", True)),
             "supported": bool(route_result.get("supported", False)),
             "reason": route_result.get("reason"),
         }
@@ -375,7 +383,7 @@ class Orchestrator:
 
             state.set_stage("preprocessing")
             preprocessor = PreprocessingPipeline()
-            modality_for_preprocessing = "mri" if selected_route == "brain_mri" else "xray"
+            modality_for_preprocessing = self._resolve_preprocessing_modality(selected_route)
 
             state.original_image, state.tensor = preprocessor.run(
                 working_content,
