@@ -116,6 +116,38 @@ function formatLabel(value?: string | null) {
   return value.replaceAll("_", " ");
 }
 
+function getRouteTitle(route?: string | null) {
+  switch (route) {
+    case "brain_mri":
+      return "Brain MRI review";
+    case "bone_xray":
+      return "Bone X-ray review";
+    case "chest_xray":
+      return "Chest X-ray review";
+    case "retina_fundus":
+      return "Retina fundus review";
+    case "unknown":
+      return "Unsupported or uncertain input";
+    default:
+      return "Medical image review";
+  }
+}
+
+function getOutputLabel(route?: string | null) {
+  switch (route) {
+    case "retina_fundus":
+      return "Severity output";
+    case "brain_mri":
+      return "Model output";
+    case "bone_xray":
+      return "Classification output";
+    case "chest_xray":
+      return "Primary finding";
+    default:
+      return "Model output";
+  }
+}
+
 function getRiskTone(risk?: string) {
   switch (risk?.toLowerCase()) {
     case "low":
@@ -149,6 +181,8 @@ function getRouteTone(route?: string | null) {
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
     case "chest_xray":
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+    case "retina_fundus":
+      return "bg-violet-50 text-violet-700 ring-1 ring-violet-100";
     case "unknown":
       return "bg-red-50 text-red-700 ring-1 ring-red-100";
     default:
@@ -391,7 +425,9 @@ export default function Home() {
 
           <section>
             <div className="mb-8 border-b border-zinc-200 pb-6">
-              <h3 className="text-3xl font-semibold tracking-tight">Review summary</h3>
+              <h3 className="text-3xl font-semibold tracking-tight">
+                {result ? getRouteTitle(selectedRoute) : "Review summary"}
+              </h3>
               <p className="mt-2 text-sm text-zinc-500">
                 A calm, structured summary for careful human review
               </p>
@@ -488,7 +524,7 @@ export default function Home() {
                   <div className="mt-10 grid gap-8 md:grid-cols-2">
                     <div>
                       <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Primary finding
+                        {getOutputLabel(selectedRoute)}
                       </p>
                       <p className="mt-3 break-words text-[1.15rem] font-semibold leading-snug text-zinc-900">
                         {inferenceRan ? result.inference?.top_label : "No inference was run"}
@@ -497,7 +533,7 @@ export default function Home() {
 
                     <div>
                       <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Finding confidence
+                        Output confidence
                       </p>
                       <p className="mt-3 text-[1.15rem] font-semibold leading-snug text-zinc-900">
                         {inferenceRan ? formatPercent(result.inference?.top_probability) : "—"}
@@ -550,6 +586,30 @@ export default function Home() {
                       )}
                     </div>
                   </div>
+
+                  {inferenceRan && result.inference?.probabilities ? (
+                    <div className="mt-10">
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Model output probabilities
+                      </p>
+
+                      <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
+                        {Object.entries(result.inference.probabilities).map(
+                          ([label, probability]) => (
+                            <div
+                              key={label}
+                              className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
+                            >
+                              <span>{label}</span>
+                              <span className="font-medium text-zinc-900">
+                                {formatPercent(probability)}
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {warnings.length > 0 ? (
                     <div className="mt-10 border-t border-zinc-200 pt-6">
@@ -628,6 +688,11 @@ export default function Home() {
                           Re-upload suggested:{" "}
                           {result.quality?.requires_reupload ? "Yes" : "No"}
                         </p>
+                      </div>
+
+                      <div>
+                        <p>Reliability score: {formatNumber(result.inference?.reliability_score)}</p>
+                        <p>Disagreement score: {formatNumber(result.inference?.disagreement_score)}</p>
                       </div>
                     </div>
                   </div>
