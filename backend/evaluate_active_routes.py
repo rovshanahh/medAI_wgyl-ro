@@ -1,3 +1,5 @@
+import json
+
 from pathlib import Path
 from statistics import mean
 
@@ -147,6 +149,21 @@ def main() -> None:
 
     print_table(rows)
     print_checks(rows)
+
+    output_path = Path("evaluation/active_route_evaluation.json")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    summary = {
+        "total_cases": len(rows),
+        "completed_cases": sum(1 for row in rows if row["status"] == "OK"),
+        "answer_decisions": sum(1 for row in rows if row["policy"] == "ANSWER"),
+        "stop_decisions": sum(1 for row in rows if row["policy"] == "STOP"),
+        "heatmaps_generated": sum(1 for row in rows if row["heatmap"] == "Yes"),
+        "rows": rows,
+    }
+
+    output_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"\nSaved evaluation report to: {output_path}")
 
 
 if __name__ == "__main__":
