@@ -11,11 +11,11 @@ SUPPORTED_UPLOADS = [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"]
 
 ACTIVE_ROUTES = [
     {
-        "route": "brain_mri",
-        "region": "brain",
-        "modality": "mri",
-        "model": "brain_mri_resnet18",
-        "description": "Reviews brain MRI images and returns the most likely tumor-related class.",
+        "route": "skin_dermoscopy",
+        "region": "skin",
+        "modality": "dermoscopy",
+        "model": "skin_dermoscopy_resnet18",
+        "description": "Reviews skin dermoscopy images and returns the most likely lesion class.",
         "status": "ACTIVE",
     },
     {
