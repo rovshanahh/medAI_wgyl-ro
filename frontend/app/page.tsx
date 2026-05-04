@@ -98,8 +98,9 @@ type AnalysisResponse = {
   message?: string;
 };
 
-const BACKEND_URL = "http://localhost:8000/analyze";
-const HEATMAP_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = `${API_BASE_URL}/analyze`;
+const HEATMAP_BASE_URL = API_BASE_URL;
 
 function formatPercent(value?: number | null) {
   if (value == null) return "—";
