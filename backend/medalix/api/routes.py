@@ -42,6 +42,14 @@ ACTIVE_ROUTES = [
         "description": "Reviews eye fundus images and estimates diabetic retinopathy severity.",
         "status": "ACTIVE",
     },
+    {
+        "route": "breast_mammography",
+        "region": "breast",
+        "modality": "mammography",
+        "model": "breast_mammography_resnet18",
+        "description": "Reviews mammography images and separates benign from malignant cases.",
+        "status": "ACTIVE",
+    },
 ]
 
 SAFETY_ROUTES = [
