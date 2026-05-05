@@ -11,6 +11,7 @@ TEST_FILES = [
     "test_samples/retina_fundus.jpg",
     "test_samples/skin_dermoscopy.jpg",
     "test_samples/test_chest_xray.dcm",
+    "test_samples/breast_mammography.jpg",
 ]
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"

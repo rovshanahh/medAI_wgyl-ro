@@ -29,7 +29,7 @@
     {
       "region": "breast",
       "modality": "mammography",
-      "model_id": "breast_mammo_placeholder"
+      "model_id": "breast_mammography_resnet18"
     },
     {
       "region": "skin",
@@ -98,16 +98,16 @@
       "model_path": "",
       "ensemble_members": []
     },
-    "breast_mammo_placeholder": {
-      "model_id": "breast_mammo_placeholder",
+    "breast_mammography_resnet18": {
+      "model_id": "breast_mammography_resnet18",
       "version": "0.1.0",
-      "architecture": "placeholder",
+      "architecture": "resnet18",
       "region": "breast",
       "modality": "mammography",
       "input_shape": [1, 3, 224, 224],
-      "status": "INACTIVE",
+      "status": "ACTIVE",
       "checksum": "",
-      "model_path": "",
+      "model_path": "reference_data/models/breast_mammography_resnet18.pth",
       "ensemble_members": []
     },
     "skin_dermoscopy_resnet18": {

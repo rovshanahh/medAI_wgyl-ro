@@ -33,6 +33,7 @@ class Orchestrator:
     ROUTE_TO_PREPROCESSING_MODALITY = {
         "brain_mri": "mri",
         "bone_xray": "xray",
+        "breast_mammography": "mammography",
         "chest_xray": "xray",
         "retina_fundus": "fundus",
         "skin_dermoscopy": "dermoscopy",

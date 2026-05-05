@@ -57,6 +57,11 @@ SKIN_DERMOSCOPY_LABELS = [
     "Vascular lesion",
 ]
 
+BREAST_MAMMOGRAPHY_LABELS = [
+    "Benign",
+    "Malignant",
+]
+
 CHEST_REPO_ID = "itsomk/chexpert-densenet121"
 CHEST_FILENAME = "pytorch_model.safetensors"
 
@@ -170,11 +175,21 @@ class RetinaFundusResNet18(ResNet18Classifier):
         super().__init__(num_classes=num_classes, dropout_p=dropout_p)
 
 
+class SkinDermoscopyResNet18(ResNet18Classifier):
+    def __init__(self, num_classes: int = 7, dropout_p: float = 0.2):
+        super().__init__(num_classes=num_classes, dropout_p=dropout_p)
+
+
+class BreastMammographyResNet18(ResNet18Classifier):
+    def __init__(self, num_classes: int = 2, dropout_p: float = 0.2):
+        super().__init__(num_classes=num_classes, dropout_p=dropout_p)
+
+
 def load_chest_xray_model(device: torch.device) -> DenseNet121Classifier:
     local_path = hf_hub_download(repo_id=CHEST_REPO_ID, filename=CHEST_FILENAME)
     state = load_file(local_path)
 
-    model = DenseNet121Classifier(num_labels=14, dropout_p=0.2)
+    model = DenseNet121Classifier(num_labels=len(CHEST_XRAY_LABELS), dropout_p=0.2)
     model.load_state_dict(state, strict=True)
     model.to(device)
     model.eval()
@@ -241,10 +256,10 @@ def load_brain_mri_model(model_path: str, device: torch.device) -> BrainMriResNe
 
     if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
         state_dict = checkpoint["model_state_dict"]
-        num_classes = int(checkpoint.get("num_classes", 4))
+        num_classes = int(checkpoint.get("num_classes", len(BRAIN_MRI_LABELS)))
     else:
         state_dict = checkpoint
-        num_classes = 4
+        num_classes = len(BRAIN_MRI_LABELS)
 
     state_dict = _remap_resnet_state_dict_keys(state_dict)
 
@@ -280,7 +295,8 @@ def load_retina_fundus_model(model_path: str, device: torch.device) -> RetinaFun
 
     return model
 
-def load_skin_dermoscopy_model(model_path: str, device: torch.device) -> ResNet18Classifier:
+
+def load_skin_dermoscopy_model(model_path: str, device: torch.device) -> SkinDermoscopyResNet18:
     checkpoint_path = Path(model_path)
 
     if not checkpoint_path.exists():
@@ -297,7 +313,35 @@ def load_skin_dermoscopy_model(model_path: str, device: torch.device) -> ResNet1
 
     state_dict = _remap_resnet_state_dict_keys(state_dict)
 
-    model = ResNet18Classifier(num_classes=num_classes, dropout_p=0.2)
+    model = SkinDermoscopyResNet18(num_classes=num_classes, dropout_p=0.2)
+    model.load_state_dict(state_dict, strict=True)
+    model.to(device)
+    model.eval()
+
+    return model
+
+
+def load_breast_mammography_model(
+    model_path: str,
+    device: torch.device,
+) -> BreastMammographyResNet18:
+    checkpoint_path = Path(model_path)
+
+    if not checkpoint_path.exists():
+        raise ValueError(f"Breast mammography model checkpoint not found at: {model_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        num_classes = int(checkpoint.get("num_classes", len(BREAST_MAMMOGRAPHY_LABELS)))
+    else:
+        state_dict = checkpoint
+        num_classes = len(BREAST_MAMMOGRAPHY_LABELS)
+
+    state_dict = _remap_resnet_state_dict_keys(state_dict)
+
+    model = BreastMammographyResNet18(num_classes=num_classes, dropout_p=0.2)
     model.load_state_dict(state_dict, strict=True)
     model.to(device)
     model.eval()
@@ -393,7 +437,7 @@ class EnsembleModel:
                 "labels": RETINA_FUNDUS_LABELS,
                 "task_type": "multiclass",
             }
-        
+
         if region == "skin" and modality == "dermoscopy":
             if architecture != "resnet18":
                 raise ValueError(f"Unsupported architecture for skin dermoscopy route: {architecture}")
@@ -404,8 +448,21 @@ class EnsembleModel:
                 "task_type": "multiclass",
             }
 
+        if region == "breast" and modality == "mammography":
+            if architecture != "resnet18":
+                raise ValueError(
+                    f"Unsupported architecture for breast mammography route: {architecture}"
+                )
+
+            return {
+                "model": load_breast_mammography_model(self._model_path(), self.device),
+                "labels": BREAST_MAMMOGRAPHY_LABELS,
+                "task_type": "multiclass",
+            }
+
         raise ValueError(
-            f"No inference implementation is available yet for region='{region}' and modality='{modality}'."
+            f"No inference implementation is available yet for region='{region}' "
+            f"and modality='{modality}'."
         )
 
     def _prepare_tensor(self, tensor: torch.Tensor) -> torch.Tensor:

@@ -25,6 +25,7 @@ SEED = 42
 EXPECTED_CLASSES = [
     "bone_xray",
     "brain_mri",
+    "breast_mammography",
     "chest_xray",
     "retina_fundus",
     "skin_dermoscopy",
@@ -297,8 +298,8 @@ def main() -> None:
             "test_acc": test_acc,
             "confusion": confusion,
             "purpose": (
-                "Route detector: brain_mri vs bone_xray vs chest_xray "
-                "vs retina_fundus vs skin_dermoscopy vs unknown"
+                "Route detector: brain_mri vs bone_xray vs breast_mammography "
+                "vs chest_xray vs retina_fundus vs skin_dermoscopy vs unknown"
             ),
         },
         MODEL_OUT,

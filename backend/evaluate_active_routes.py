@@ -10,6 +10,7 @@ TEST_FILES = {
     "chest_xray": "test_samples/chest_xray.jpg",
     "retina_fundus": "test_samples/retina_fundus.jpg",
     "skin_dermoscopy": "test_samples/skin_dermoscopy.jpg",
+    "breast_mammography": "test_samples/breast_mammography.jpg",
     "unknown": "test_samples/random.jpg",
     "dicom_chest_xray": "test_samples/test_chest_xray.dcm",
 }
@@ -160,7 +161,7 @@ def print_checks(summary: dict) -> None:
     print(f"- STOP decisions: {summary['stop_decisions']}")
     print(f"- Heatmaps generated: {summary['heatmaps_generated']}")
     print("- Unknown/random input should STOP before inference.")
-    print("- Active medical routes should produce inference and heatmap.")
+    print("- Active medical routes should produce inference and heatmap unless policy escalates for uncertainty.")
 
 
 def save_report(summary: dict) -> None:

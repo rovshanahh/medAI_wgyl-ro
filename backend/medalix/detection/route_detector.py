@@ -10,10 +10,11 @@ class RouteDetector:
     ROUTE_TO_REGION_MODALITY = {
         "brain_mri": ("brain", "mri"),
         "bone_xray": ("bone", "xray"),
+        "breast_mammography": ("breast", "mammography"),
         "chest_xray": ("chest", "xray"),
         "retina_fundus": ("retina", "fundus"),
-        "unknown": (None, None),
         "skin_dermoscopy": ("skin", "dermoscopy"),
+        "unknown": (None, None),
     }
 
     MIN_CONFIDENCE = 0.80

@@ -10,6 +10,7 @@ TEST_IMAGES = [
     "test_samples/random.jpg",
     "test_samples/retina_fundus.jpg",
     "test_samples/skin_dermoscopy.jpg",
+    "test_samples/breast_mammography.jpg",
 ]
 
 
