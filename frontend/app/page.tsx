@@ -142,6 +142,15 @@ const FALLBACK_ROUTES = [
     status: "ACTIVE",
   },
   {
+    route: "breast_mammography",
+    region: "breast",
+    modality: "mammography",
+    model: "breast_mammography_resnet18",
+    description:
+      "Reviews mammography images and separates benign from malignant cases.",
+    status: "ACTIVE",
+  },
+  {
     route: "chest_xray",
     region: "chest",
     modality: "xray",
@@ -157,6 +166,15 @@ const FALLBACK_ROUTES = [
     model: "retina_fundus_resnet18",
     description:
       "Reviews eye fundus images and estimates diabetic retinopathy severity.",
+    status: "ACTIVE",
+  },
+  {
+    route: "skin_dermoscopy",
+    region: "skin",
+    modality: "dermoscopy",
+    model: "skin_dermoscopy_resnet18",
+    description:
+      "Reviews skin dermoscopy images and returns the most likely lesion class.",
     status: "ACTIVE",
   },
 ];
@@ -182,10 +200,14 @@ function getRouteTitle(route?: string | null) {
       return "Brain MRI review";
     case "bone_xray":
       return "Bone X-ray review";
+    case "breast_mammography":
+      return "Breast mammography review";
     case "chest_xray":
       return "Chest X-ray review";
     case "retina_fundus":
       return "Retina fundus review";
+    case "skin_dermoscopy":
+      return "Skin dermoscopy review";
     case "unknown":
       return "Unsupported or uncertain input";
     default:
@@ -199,14 +221,18 @@ function getRouteCardTitle(route?: string | null) {
 
 function getOutputLabel(route?: string | null) {
   switch (route) {
-    case "retina_fundus":
-      return "Severity output";
     case "brain_mri":
       return "Model output";
     case "bone_xray":
       return "Classification output";
+    case "breast_mammography":
+      return "Classification output";
     case "chest_xray":
       return "Primary finding";
+    case "retina_fundus":
+      return "Severity output";
+    case "skin_dermoscopy":
+      return "Lesion class output";
     default:
       return "Model output";
   }
@@ -243,10 +269,14 @@ function getRouteTone(route?: string | null) {
       return "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100";
     case "bone_xray":
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
+    case "breast_mammography":
+      return "bg-rose-50 text-rose-700 ring-1 ring-rose-100";
     case "chest_xray":
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
     case "retina_fundus":
       return "bg-violet-50 text-violet-700 ring-1 ring-violet-100";
+    case "skin_dermoscopy":
+      return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
     case "unknown":
       return "bg-red-50 text-red-700 ring-1 ring-red-100";
     default:
@@ -307,14 +337,14 @@ export default function Home() {
     ? appConfig.active_routes
     : FALLBACK_ROUTES;
 
-  const supportedUploads =
-    appConfig?.supported_uploads?.length
-      ? appConfig.supported_uploads.join(", ").replaceAll(".", "").toUpperCase()
-      : "PNG, JPG, TIFF, DICOM";
+  const supportedUploads = appConfig?.supported_uploads?.length
+    ? appConfig.supported_uploads.join(", ").replaceAll(".", "").toUpperCase()
+    : "PNG, JPG, TIFF, DICOM";
 
   const routeDetector = result?.input_gate?.top_level_gate?.route_detector;
   const conversion = result?.input_gate?.top_level_gate?.conversion;
-  const selectedRoute = result?.input_gate?.selected_route || routeDetector?.route_label;
+  const selectedRoute =
+    result?.input_gate?.selected_route || routeDetector?.route_label;
   const routeProbabilities =
     routeDetector?.probabilities || result?.input_gate?.route_scores || {};
   const inferenceRan = Boolean(result?.inference?.top_label);
@@ -392,41 +422,55 @@ export default function Home() {
               <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-400">
                 Research-use assistant
               </p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight">MedAIx</h1>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+                MedAIx
+              </h1>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-5 text-sm text-zinc-600">
-            <Link href="/" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <House size={16} />
               Home
             </Link>
 
-            <Link href="/workspace" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/workspace"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <LayoutDashboard size={16} />
               Workspace
             </Link>
 
-            <Link href="/about" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/about"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <CircleHelp size={16} />
               About
             </Link>
 
-            <Link href="/contact" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/contact"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <Mail size={16} />
               Contact
             </Link>
           </div>
         </nav>
 
-        <section className="mb-14 grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+        <section className="mb-14">
           <div>
             <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs text-zinc-600 shadow-[0_6px_20px_rgba(0,0,0,0.03)]">
               <ShieldPlus size={15} className="text-red-500" />
               Research-use image review assistant
             </div>
 
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h2 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
               A careful assistant for reviewing medical images.
             </h2>
 
@@ -436,7 +480,7 @@ export default function Home() {
               for research use.
             </p>
 
-            <div className="mt-10 grid gap-4 lg:grid-cols-2">
+            <div className="mt-10 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
               {activeRoutes.map((routeInfo) => (
                 <div
                   key={routeInfo.route}
@@ -493,7 +537,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="workspace" className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <section
+          id="workspace"
+          className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]"
+        >
           <aside>
             <h3 className="mb-4 text-base font-medium">Upload image</h3>
 
@@ -529,13 +576,18 @@ export default function Home() {
 
             {previewUrl && !isDicomFile ? (
               <div className="mt-4 overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
-                <img src={previewUrl} alt="Preview" className="h-auto w-full object-cover" />
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  className="h-auto w-full object-cover"
+                />
               </div>
             ) : isDicomFile ? (
               <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-[24px] border border-zinc-200 bg-white px-6 text-center text-sm text-zinc-500">
                 <p className="font-medium text-zinc-700">DICOM file selected</p>
                 <p className="mt-2">
-                  Browser preview is unavailable for .dcm files. The backend will convert it for analysis.
+                  Browser preview is unavailable for .dcm files. The backend will
+                  convert it for analysis.
                 </p>
               </div>
             ) : (
@@ -639,7 +691,9 @@ export default function Home() {
 
                   {conversion?.converted ? (
                     <div className="mt-10 rounded-[18px] bg-white px-4 py-4 text-sm text-zinc-700 ring-1 ring-zinc-200">
-                      <p className="font-medium text-zinc-900">Format conversion</p>
+                      <p className="font-medium text-zinc-900">
+                        Format conversion
+                      </p>
                       <p className="mt-2">
                         {conversion.message || "DICOM was converted for analysis."}
                       </p>
@@ -655,7 +709,9 @@ export default function Home() {
                         {getOutputLabel(selectedRoute)}
                       </p>
                       <p className="mt-3 break-words text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan ? result.inference?.top_label : "No inference was run"}
+                        {inferenceRan
+                          ? result.inference?.top_label
+                          : "No inference was run"}
                       </p>
                     </div>
 
@@ -664,7 +720,9 @@ export default function Home() {
                         Output confidence
                       </p>
                       <p className="mt-3 text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan ? formatPercent(result.inference?.top_probability) : "—"}
+                        {inferenceRan
+                          ? formatPercent(result.inference?.top_probability)
+                          : "—"}
                       </p>
                     </div>
                   </div>
@@ -696,17 +754,21 @@ export default function Home() {
 
                     <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
                       {Object.keys(routeProbabilities).length ? (
-                        Object.entries(routeProbabilities).map(([label, probability]) => (
-                          <div
-                            key={label}
-                            className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
-                          >
-                            <span className="capitalize">{formatLabel(label)}</span>
-                            <span className="font-medium text-zinc-900">
-                              {formatPercent(probability)}
-                            </span>
-                          </div>
-                        ))
+                        Object.entries(routeProbabilities).map(
+                          ([label, probability]) => (
+                            <div
+                              key={label}
+                              className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
+                            >
+                              <span className="capitalize">
+                                {formatLabel(label)}
+                              </span>
+                              <span className="font-medium text-zinc-900">
+                                {formatPercent(probability)}
+                              </span>
+                            </div>
+                          )
+                        )
                       ) : (
                         <div className="py-3 text-sm text-zinc-500">
                           No route probabilities available
@@ -774,7 +836,10 @@ export default function Home() {
                               ? "No"
                               : "—"}
                         </p>
-                        <p>Input confidence: {formatPercent(result.input_gate?.confidence)}</p>
+                        <p>
+                          Input confidence:{" "}
+                          {formatPercent(result.input_gate?.confidence)}
+                        </p>
                       </div>
 
                       <div>
@@ -788,7 +853,10 @@ export default function Home() {
                       </div>
 
                       <div>
-                        <p>Detection confidence: {formatPercent(result.detection?.confidence)}</p>
+                        <p>
+                          Detection confidence:{" "}
+                          {formatPercent(result.detection?.confidence)}
+                        </p>
                         <p>
                           Confirmation needed:{" "}
                           {result.detection?.requires_confirmation ? "Yes" : "No"}
@@ -819,8 +887,14 @@ export default function Home() {
                       </div>
 
                       <div>
-                        <p>Reliability score: {formatNumber(result.inference?.reliability_score)}</p>
-                        <p>Disagreement score: {formatNumber(result.inference?.disagreement_score)}</p>
+                        <p>
+                          Reliability score:{" "}
+                          {formatNumber(result.inference?.reliability_score)}
+                        </p>
+                        <p>
+                          Disagreement score:{" "}
+                          {formatNumber(result.inference?.disagreement_score)}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -868,7 +942,9 @@ export default function Home() {
                     <div className="flex items-center justify-between border-b border-zinc-200 py-3">
                       <span>Explanation target</span>
                       <span className="font-medium text-zinc-900">
-                        {result.explainability?.target_label || result.inference?.top_label || "—"}
+                        {result.explainability?.target_label ||
+                          result.inference?.top_label ||
+                          "—"}
                       </span>
                     </div>
                   </div>
@@ -887,24 +963,36 @@ export default function Home() {
               <span className="font-semibold">MedAIx</span>
             </div>
             <p className="text-sm leading-7 text-zinc-600">
-              A research-use assistant for careful, non-diagnostic medical image review.
+              A research-use assistant for careful, non-diagnostic medical image
+              review.
             </p>
           </div>
 
           <div>
-            <h4 className="mb-3 text-sm font-semibold text-zinc-900">Quick links</h4>
+            <h4 className="mb-3 text-sm font-semibold text-zinc-900">
+              Quick links
+            </h4>
             <div className="space-y-2 text-sm text-zinc-600">
-              <Link href="/" className="inline-flex items-center gap-2 hover:text-zinc-900">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 hover:text-zinc-900"
+              >
                 <House size={16} />
                 Home
               </Link>
               <br />
-              <Link href="/workspace" className="inline-flex items-center gap-2 hover:text-zinc-900">
+              <Link
+                href="/workspace"
+                className="inline-flex items-center gap-2 hover:text-zinc-900"
+              >
                 <LayoutDashboard size={16} />
                 Workspace
               </Link>
               <br />
-              <Link href="/about" className="inline-flex items-center gap-2 hover:text-zinc-900">
+              <Link
+                href="/about"
+                className="inline-flex items-center gap-2 hover:text-zinc-900"
+              >
                 <CircleHelp size={16} />
                 About
               </Link>
@@ -935,9 +1023,12 @@ export default function Home() {
         <div className="border-t border-zinc-200 bg-white/70">
           <div className="mx-auto max-w-7xl px-6 py-4">
             <p className="text-xs leading-6 tracking-[0.01em] text-zinc-500">
-              <span className="font-semibold text-zinc-700">Important notice.</span>{" "}
+              <span className="font-semibold text-zinc-700">
+                Important notice.
+              </span>{" "}
               This platform is intended only for research and educational use.
-              Outputs are non-diagnostic and must not be used for clinical decision-making.
+              Outputs are non-diagnostic and must not be used for clinical
+              decision-making.
             </p>
           </div>
         </div>
