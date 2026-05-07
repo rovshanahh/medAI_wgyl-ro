@@ -11,11 +11,11 @@ SUPPORTED_UPLOADS = [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"]
 
 ACTIVE_ROUTES = [
     {
-        "route": "skin_dermoscopy",
-        "region": "skin",
-        "modality": "dermoscopy",
-        "model": "skin_dermoscopy_resnet18",
-        "description": "Reviews skin dermoscopy images and returns the most likely lesion class.",
+        "route": "brain_mri",
+        "region": "brain",
+        "modality": "mri",
+        "model": "brain_mri_resnet18",
+        "description": "Reviews brain MRI images and returns the most likely tumor-related class.",
         "status": "ACTIVE",
     },
     {
@@ -24,6 +24,14 @@ ACTIVE_ROUTES = [
         "modality": "xray",
         "model": "bone_xray_standard",
         "description": "Reviews bone X-ray images and separates normal from abnormal cases.",
+        "status": "ACTIVE",
+    },
+    {
+        "route": "breast_mammography",
+        "region": "breast",
+        "modality": "mammography",
+        "model": "breast_mammography_resnet18",
+        "description": "Reviews mammography images and separates benign from malignant cases.",
         "status": "ACTIVE",
     },
     {
@@ -43,11 +51,11 @@ ACTIVE_ROUTES = [
         "status": "ACTIVE",
     },
     {
-        "route": "breast_mammography",
-        "region": "breast",
-        "modality": "mammography",
-        "model": "breast_mammography_resnet18",
-        "description": "Reviews mammography images and separates benign from malignant cases.",
+        "route": "skin_dermoscopy",
+        "region": "skin",
+        "modality": "dermoscopy",
+        "model": "skin_dermoscopy_resnet18",
+        "description": "Reviews skin dermoscopy images and returns the most likely lesion class.",
         "status": "ACTIVE",
     },
 ]
@@ -70,20 +78,7 @@ INACTIVE_PLACEHOLDERS = [
         "modality": "ct",
         "status": "INACTIVE",
     },
-    {
-        "route": "breast_mammography",
-        "region": "breast",
-        "modality": "mammography",
-        "status": "INACTIVE",
-    },
-    {
-        "route": "skin_dermoscopy",
-        "region": "skin",
-        "modality": "dermoscopy",
-        "status": "INACTIVE",
-    },
 ]
-
 
 @router.get("/health")
 def health():
