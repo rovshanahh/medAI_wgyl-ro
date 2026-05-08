@@ -35,6 +35,13 @@ def safe_get(data, *keys, default=None):
     return current if current is not None else default
 
 
+def is_medical_route_success(row: dict) -> bool:
+    if row["case"] == "unknown":
+        return row["policy"] == "STOP" and row["heatmap"] == "No"
+
+    return row["policy"] in {"ANSWER", "ESCALATE"} and row["heatmap"] == "Yes"
+
+
 def run_case(orchestrator: Orchestrator, expected_route: str, file_path: str) -> dict:
     path = Path(file_path)
 
@@ -48,10 +55,13 @@ def run_case(orchestrator: Orchestrator, expected_route: str, file_path: str) ->
             "policy": "—",
             "output": "—",
             "confidence": "—",
+            "raw_confidence": None,
             "heatmap": "—",
+            "heatmap_path": None,
             "message": "Test file missing",
             "stage_count": 0,
             "timing_count": 0,
+            "expected_behavior_passed": False,
         }
 
     result = orchestrator.execute(
@@ -71,7 +81,7 @@ def run_case(orchestrator: Orchestrator, expected_route: str, file_path: str) ->
     stage_count = len(result.get("pipeline_stages", []))
     timing_summary = result.get("timing_summary", [])
 
-    return {
+    row = {
         "case": expected_route,
         "file": file_path,
         "status": "OK",
@@ -88,6 +98,10 @@ def run_case(orchestrator: Orchestrator, expected_route: str, file_path: str) ->
         "timing_count": len(timing_summary),
     }
 
+    row["expected_behavior_passed"] = is_medical_route_success(row)
+
+    return row
+
 
 def print_table(rows: list[dict]) -> None:
     headers = [
@@ -98,6 +112,7 @@ def print_table(rows: list[dict]) -> None:
         "Output",
         "Confidence",
         "Heatmap",
+        "Pass",
     ]
 
     table_rows = [
@@ -109,6 +124,7 @@ def print_table(rows: list[dict]) -> None:
             row["output"],
             row["confidence"],
             row["heatmap"],
+            "Yes" if row["expected_behavior_passed"] else "No",
         ]
         for row in rows
     ]
@@ -118,9 +134,9 @@ def print_table(rows: list[dict]) -> None:
         for i, header in enumerate(headers)
     ]
 
-    print("\n" + "=" * 100)
+    print("\n" + "=" * 120)
     print("ACTIVE ROUTE EVALUATION SUMMARY")
-    print("=" * 100)
+    print("=" * 120)
 
     header_line = " | ".join(header.ljust(widths[i]) for i, header in enumerate(headers))
     print(header_line)
@@ -129,7 +145,7 @@ def print_table(rows: list[dict]) -> None:
     for row in table_rows:
         print(" | ".join(str(value).ljust(widths[i]) for i, value in enumerate(row)))
 
-    print("=" * 100)
+    print("=" * 120)
 
 
 def build_summary(rows: list[dict]) -> dict:
@@ -138,17 +154,26 @@ def build_summary(rows: list[dict]) -> dict:
     heatmaps = sum(1 for row in rows if row["heatmap"] == "Yes")
     stopped = sum(1 for row in rows if row["policy"] == "STOP")
     answered = sum(1 for row in rows if row["policy"] == "ANSWER")
+    escalated = sum(1 for row in rows if row["policy"] == "ESCALATE")
+    successful_cases = sum(1 for row in rows if is_medical_route_success(row))
 
     return {
         "total_cases": total,
         "completed_cases": completed,
+        "successful_expected_behaviors": successful_cases,
         "answer_decisions": answered,
+        "escalate_decisions": escalated,
         "stop_decisions": stopped,
         "heatmaps_generated": heatmaps,
+        "policy_interpretation": {
+            "ANSWER": "Direct governed output was allowed.",
+            "ESCALATE": "Output exists, but confidence/uncertainty requires human review.",
+            "STOP": "Input was blocked before inference or stopped by policy.",
+        },
         "expected_behavior": {
-            "active_medical_routes": "Should produce inference and heatmap",
-            "unknown_random_input": "Should STOP before inference",
-            "dicom_input": "Should convert, route, infer, and generate heatmap",
+            "active_medical_routes": "Should produce inference and heatmap. ANSWER and ESCALATE are both valid governed outcomes.",
+            "unknown_random_input": "Should STOP before inference and produce no heatmap.",
+            "dicom_input": "Should convert, route, infer, and generate heatmap.",
         },
         "rows": rows,
     }
@@ -157,9 +182,17 @@ def build_summary(rows: list[dict]) -> dict:
 def print_checks(summary: dict) -> None:
     print("\nChecks:")
     print(f"- Completed cases: {summary['completed_cases']}/{summary['total_cases']}")
+    print(
+        f"- Successful expected behaviors: "
+        f"{summary['successful_expected_behaviors']}/{summary['total_cases']}"
+    )
     print(f"- ANSWER decisions: {summary['answer_decisions']}")
+    print(f"- ESCALATE decisions: {summary['escalate_decisions']}")
     print(f"- STOP decisions: {summary['stop_decisions']}")
     print(f"- Heatmaps generated: {summary['heatmaps_generated']}")
+    print("- ANSWER means direct governed output was allowed.")
+    print("- ESCALATE means output exists but needs human review.")
+    print("- STOP means unsafe/unknown input was blocked.")
     print("- Unknown/random input should STOP before inference.")
     print("- Active medical routes should produce inference and heatmap unless policy escalates for uncertainty.")
 
