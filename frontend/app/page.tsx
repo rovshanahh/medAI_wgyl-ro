@@ -97,6 +97,16 @@ type AnalysisResponse = {
     requires_confirmation?: boolean;
     top_probability?: number;
     routing_candidates?: string[];
+    alpha?: number | null;
+    threshold?: number | null;
+    nonconformity?: number | null;
+    method?: string;
+    reason?: string;
+    routing_candidate_details?: {
+      route: string;
+      probability: number;
+      nonconformity: number;
+    }[];
   };
   ood?: {
     tier?: string;
@@ -575,34 +585,22 @@ export default function Home() {
           </div>
 
           <div className="flex flex-wrap items-center gap-5 text-sm text-zinc-600">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
               <House size={16} />
               Home
             </Link>
 
-            <Link
-              href="/workspace"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/workspace" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
               <LayoutDashboard size={16} />
               Workspace
             </Link>
 
-            <Link
-              href="/about"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/about" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
               <CircleHelp size={16} />
               About
             </Link>
 
-            <Link
-              href="/contact"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/contact" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
               <Mail size={16} />
               Contact
             </Link>
@@ -683,10 +681,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section
-          id="workspace"
-          className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]"
-        >
+        <section id="workspace" className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]">
           <aside>
             <h3 className="mb-4 text-base font-medium">Upload image</h3>
 
@@ -722,18 +717,13 @@ export default function Home() {
 
             {previewUrl && !isDicomFile ? (
               <div className="mt-4 overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
-                <img
-                  src={previewUrl}
-                  alt="Preview"
-                  className="h-auto w-full object-cover"
-                />
+                <img src={previewUrl} alt="Preview" className="h-auto w-full object-cover" />
               </div>
             ) : isDicomFile ? (
               <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-[24px] border border-zinc-200 bg-white px-6 text-center text-sm text-zinc-500">
                 <p className="font-medium text-zinc-700">DICOM file selected</p>
                 <p className="mt-2">
-                  Browser preview is unavailable for .dcm files. The backend will
-                  convert it for analysis.
+                  Browser preview is unavailable for .dcm files. The backend will convert it for analysis.
                 </p>
               </div>
             ) : (
@@ -767,20 +757,14 @@ export default function Home() {
                         <span className="max-w-[150px] truncate font-medium text-zinc-900">
                           {review.filename}
                         </span>
-                        <span
-                          className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium ${getRouteTone(
-                            review.route
-                          )}`}
-                        >
+                        <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium ${getRouteTone(review.route)}`}>
                           {formatLabel(review.route)}
                         </span>
                       </div>
 
                       <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
                         <span>{review.policy}</span>
-                        <span className="max-w-[130px] truncate">
-                          {review.output}
-                        </span>
+                        <span className="max-w-[130px] truncate">{review.output}</span>
                       </div>
 
                       <div className="mt-1 text-xs text-zinc-400">
@@ -828,11 +812,7 @@ export default function Home() {
                         Risk level
                       </p>
                       <div className="mt-3">
-                        <span
-                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getRiskTone(
-                            result.policy?.risk_category
-                          )}`}
-                        >
+                        <span className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getRiskTone(result.policy?.risk_category)}`}>
                           {result.policy?.risk_category || "—"}
                         </span>
                       </div>
@@ -843,11 +823,7 @@ export default function Home() {
                         Image check
                       </p>
                       <div className="mt-3">
-                        <span
-                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getInputTone(
-                            result.input_gate?.accepted_for_analysis
-                          )}`}
-                        >
+                        <span className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getInputTone(result.input_gate?.accepted_for_analysis)}`}>
                           {result.input_gate?.accepted_for_analysis === true
                             ? "Accepted"
                             : result.input_gate?.accepted_for_analysis === false
@@ -862,11 +838,7 @@ export default function Home() {
                         Route
                       </p>
                       <div className="mt-3">
-                        <span
-                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium capitalize ${getRouteTone(
-                            selectedRoute
-                          )}`}
-                        >
+                        <span className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium capitalize ${getRouteTone(selectedRoute)}`}>
                           {formatLabel(selectedRoute)}
                         </span>
                       </div>
@@ -887,9 +859,7 @@ export default function Home() {
 
                   {conversion?.converted ? (
                     <div className="mt-10 rounded-[18px] bg-white px-4 py-4 text-sm text-zinc-700 ring-1 ring-zinc-200">
-                      <p className="font-medium text-zinc-900">
-                        Format conversion
-                      </p>
+                      <p className="font-medium text-zinc-900">Format conversion</p>
                       <p className="mt-2">
                         {conversion.message || "DICOM was converted for analysis."}
                       </p>
@@ -905,9 +875,7 @@ export default function Home() {
                         {getOutputLabel(selectedRoute)}
                       </p>
                       <p className="mt-3 break-words text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan
-                          ? result.inference?.top_label
-                          : "No inference was run"}
+                        {inferenceRan ? result.inference?.top_label : "No inference was run"}
                       </p>
                     </div>
 
@@ -916,9 +884,7 @@ export default function Home() {
                         Output confidence
                       </p>
                       <p className="mt-3 text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan
-                          ? formatPercent(result.inference?.top_probability)
-                          : "—"}
+                        {inferenceRan ? formatPercent(result.inference?.top_probability) : "—"}
                       </p>
                     </div>
                   </div>
@@ -950,21 +916,17 @@ export default function Home() {
 
                     <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
                       {Object.keys(routeProbabilities).length ? (
-                        Object.entries(routeProbabilities).map(
-                          ([label, probability]) => (
-                            <div
-                              key={label}
-                              className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
-                            >
-                              <span className="capitalize">
-                                {formatLabel(label)}
-                              </span>
-                              <span className="font-medium text-zinc-900">
-                                {formatPercent(probability)}
-                              </span>
-                            </div>
-                          )
-                        )
+                        Object.entries(routeProbabilities).map(([label, probability]) => (
+                          <div
+                            key={label}
+                            className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
+                          >
+                            <span className="capitalize">{formatLabel(label)}</span>
+                            <span className="font-medium text-zinc-900">
+                              {formatPercent(probability)}
+                            </span>
+                          </div>
+                        ))
                       ) : (
                         <div className="py-3 text-sm text-zinc-500">
                           No route probabilities available
@@ -972,6 +934,29 @@ export default function Home() {
                       )}
                     </div>
                   </div>
+
+                  {result.routing?.routing_candidate_details?.length ? (
+                    <div className="mt-10">
+                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                        Conformal routing candidates
+                      </p>
+
+                      <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
+                        {result.routing.routing_candidate_details.map((candidate) => (
+                          <div
+                            key={candidate.route}
+                            className="grid gap-2 py-3 text-sm text-zinc-700 sm:grid-cols-3"
+                          >
+                            <span className="font-medium text-zinc-900">
+                              {formatLabel(candidate.route)}
+                            </span>
+                            <span>Probability: {formatPercent(candidate.probability)}</span>
+                            <span>Nonconformity: {formatNumber(candidate.nonconformity)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {inferenceRan && result.inference?.probabilities ? (
                     <div className="mt-10">
@@ -1032,10 +1017,7 @@ export default function Home() {
                               ? "No"
                               : "—"}
                         </p>
-                        <p>
-                          Input confidence:{" "}
-                          {formatPercent(result.input_gate?.confidence)}
-                        </p>
+                        <p>Input confidence: {formatPercent(result.input_gate?.confidence)}</p>
                       </div>
 
                       <div>
@@ -1054,13 +1036,20 @@ export default function Home() {
                       </div>
 
                       <div>
+                        <p>Routing method: {result.routing?.method || "—"}</p>
+                        <p>Conformal set size: {result.routing?.set_size ?? "—"}</p>
+                      </div>
+
+                      <div>
+                        <p>Alpha: {formatNumber(result.routing?.alpha)}</p>
+                        <p>Threshold: {formatNumber(result.routing?.threshold)}</p>
+                      </div>
+
+                      <div>
+                        <p>Nonconformity: {formatNumber(result.routing?.nonconformity)}</p>
                         <p>
-                          Detection confidence:{" "}
-                          {formatPercent(result.detection?.confidence)}
-                        </p>
-                        <p>
-                          Confirmation needed:{" "}
-                          {result.detection?.requires_confirmation ? "Yes" : "No"}
+                          Requires confirmation:{" "}
+                          {result.routing?.requires_confirmation ? "Yes" : "No"}
                         </p>
                       </div>
 
@@ -1222,26 +1211,17 @@ export default function Home() {
               Quick links
             </h4>
             <div className="space-y-2 text-sm text-zinc-600">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 hover:text-zinc-900"
-              >
+              <Link href="/" className="inline-flex items-center gap-2 hover:text-zinc-900">
                 <House size={16} />
                 Home
               </Link>
               <br />
-              <Link
-                href="/workspace"
-                className="inline-flex items-center gap-2 hover:text-zinc-900"
-              >
+              <Link href="/workspace" className="inline-flex items-center gap-2 hover:text-zinc-900">
                 <LayoutDashboard size={16} />
                 Workspace
               </Link>
               <br />
-              <Link
-                href="/about"
-                className="inline-flex items-center gap-2 hover:text-zinc-900"
-              >
+              <Link href="/about" className="inline-flex items-center gap-2 hover:text-zinc-900">
                 <CircleHelp size={16} />
                 About
               </Link>
