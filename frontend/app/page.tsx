@@ -116,6 +116,16 @@ type AnalysisResponse = {
   message?: string;
 };
 
+type RecentReview = {
+  id: string;
+  filename: string;
+  route: string;
+  policy: string;
+  output: string;
+  confidence?: number | null;
+  result: AnalysisResponse;
+};
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
@@ -327,6 +337,7 @@ function getRouteTone(route?: string | null) {
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [recentReviews, setRecentReviews] = useState<RecentReview[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -423,13 +434,30 @@ export default function Home() {
         body: formData,
       });
 
-      const data = await response.json();
+      const data: AnalysisResponse = await response.json();
 
       if (!response.ok) {
-        throw new Error(data?.detail || "Request failed.");
+        throw new Error((data as any)?.detail || "Request failed.");
       }
 
       setResult(data);
+
+      const route =
+        data?.input_gate?.selected_route ||
+        data?.input_gate?.top_level_gate?.route_detector?.route_label ||
+        "unknown";
+
+      const review: RecentReview = {
+        id: `${Date.now()}-${file.name}`,
+        filename: file.name,
+        route,
+        policy: data?.policy?.action || "—",
+        output: data?.inference?.top_label || "No inference",
+        confidence: data?.inference?.top_probability,
+        result: data,
+      };
+
+      setRecentReviews((previous) => [review, ...previous].slice(0, 5));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -640,6 +668,46 @@ export default function Home() {
             {error ? (
               <div className="mt-4 rounded-[18px] bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
                 {error}
+              </div>
+            ) : null}
+
+            {recentReviews.length > 0 ? (
+              <div className="mt-6">
+                <h3 className="mb-3 text-base font-medium">Recent reviews</h3>
+
+                <div className="space-y-3">
+                  {recentReviews.map((review) => (
+                    <button
+                      key={review.id}
+                      onClick={() => setResult(review.result)}
+                      className="w-full rounded-[18px] border border-zinc-200 bg-white px-4 py-3 text-left text-sm transition hover:border-red-100 hover:bg-red-50/20"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="max-w-[150px] truncate font-medium text-zinc-900">
+                          {review.filename}
+                        </span>
+                        <span
+                          className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium ${getRouteTone(
+                            review.route
+                          )}`}
+                        >
+                          {formatLabel(review.route)}
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
+                        <span>{review.policy}</span>
+                        <span className="max-w-[130px] truncate">
+                          {review.output}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 text-xs text-zinc-400">
+                        Confidence: {formatPercent(review.confidence)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
           </aside>
@@ -887,6 +955,11 @@ export default function Home() {
                           Input confidence:{" "}
                           {formatPercent(result.input_gate?.confidence)}
                         </p>
+                      </div>
+
+                      <div>
+                        <p>Policy action: {result.policy?.action || "—"}</p>
+                        <p>Risk category: {result.policy?.risk_category || "—"}</p>
                       </div>
 
                       <div>
