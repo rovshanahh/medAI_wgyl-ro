@@ -238,6 +238,46 @@ function getOutputLabel(route?: string | null) {
   }
 }
 
+function getPolicyDisplay(action?: string) {
+  switch (action) {
+    case "ANSWER":
+      return {
+        title: "Answer allowed",
+        description:
+          "The system found enough support to show the model output.",
+      };
+    case "ESCALATE":
+      return {
+        title: "Human review recommended",
+        description:
+          "The model produced an output, but confidence or uncertainty suggests expert review.",
+      };
+    case "REQUEST_EVIDENCE":
+      return {
+        title: "More evidence needed",
+        description:
+          "The uploaded image may not provide enough reliable information for automatic review.",
+      };
+    case "REFUSE":
+      return {
+        title: "Review refused",
+        description:
+          "The system refused to provide an output because safety checks were not satisfied.",
+      };
+    case "STOP":
+      return {
+        title: "Stopped before inference",
+        description:
+          "The system stopped the request before model inference because the input was unsupported or uncertain.",
+      };
+    default:
+      return {
+        title: "Review pending",
+        description: "No final policy decision is available yet.",
+      };
+  }
+}
+
 function getRiskTone(risk?: string) {
   switch (risk?.toLowerCase()) {
     case "low":
@@ -348,6 +388,7 @@ export default function Home() {
   const routeProbabilities =
     routeDetector?.probabilities || result?.input_gate?.route_scores || {};
   const inferenceRan = Boolean(result?.inference?.top_label);
+  const policyDisplay = getPolicyDisplay(result?.policy?.action);
 
   const warnings = [
     ...(result?.policy?.warnings ?? []),
@@ -626,7 +667,10 @@ export default function Home() {
                         Recommended next step
                       </p>
                       <p className="mt-3 text-[1.25rem] font-semibold leading-snug text-zinc-900">
-                        {result.policy?.action || "—"}
+                        {policyDisplay.title}
+                      </p>
+                      <p className="mt-2 max-w-xs text-sm leading-6 text-zinc-500">
+                        {policyDisplay.description}
                       </p>
                     </div>
 
@@ -685,7 +729,10 @@ export default function Home() {
                       Why this was suggested
                     </p>
                     <p className="mt-4 text-base leading-7 text-zinc-700">
-                      {result.policy?.reason || result.input_gate?.message || "—"}
+                      {result.policy?.reason ||
+                        policyDisplay.description ||
+                        result.input_gate?.message ||
+                        "—"}
                     </p>
                   </div>
 
