@@ -7,6 +7,7 @@ from medalix.config.route_metadata import (
     SAFETY_ROUTES,
 )
 from medalix.inference.ensemble_model import EnsembleModel
+from medalix.report.analysis_report_builder import AnalysisReportBuilder
 
 
 router = APIRouter()
@@ -90,3 +91,13 @@ def get_result(analysis_id: str):
         raise HTTPException(status_code=404, detail="Analysis result not found")
 
     return result
+
+
+@router.get("/result/{analysis_id}/report")
+def get_result_report(analysis_id: str):
+    result = orchestrator.get_result(analysis_id)
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+
+    return AnalysisReportBuilder.build(result)
