@@ -33,6 +33,7 @@ type AppConfig = {
 };
 
 type AnalysisResponse = {
+  analysis_id?: string;
   filename?: string;
   input_gate?: {
     accepted_for_analysis?: boolean;
@@ -124,6 +125,13 @@ type RecentReview = {
   output: string;
   confidence?: number | null;
   result: AnalysisResponse;
+};
+
+type AnalysisReport = {
+  summary?: Record<string, string | number | null>;
+  sections?: Record<string, unknown>;
+  plain_text?: string;
+  disclaimer?: string;
 };
 
 const API_BASE_URL =
@@ -339,6 +347,9 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [recentReviews, setRecentReviews] = useState<RecentReview[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [report, setReport] = useState<AnalysisReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportMessage, setReportMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -412,6 +423,8 @@ export default function Home() {
     const selected = e.target.files?.[0] ?? null;
     setFile(selected);
     setResult(null);
+    setReport(null);
+    setReportMessage("");
     setError("");
   };
 
@@ -425,6 +438,8 @@ export default function Home() {
       setLoading(true);
       setError("");
       setResult(null);
+      setReport(null);
+      setReportMessage("");
 
       const formData = new FormData();
       formData.append("file", file);
@@ -434,10 +449,10 @@ export default function Home() {
         body: formData,
       });
 
-      const data: AnalysisResponse = await response.json();
+      const data: AnalysisResponse & { detail?: string } = await response.json();
 
       if (!response.ok) {
-        throw new Error((data as any)?.detail || "Request failed.");
+        throw new Error(data?.detail || "Request failed.");
       }
 
       setResult(data);
@@ -468,7 +483,69 @@ export default function Home() {
   const handleReset = () => {
     setFile(null);
     setResult(null);
+    setReport(null);
+    setReportMessage("");
     setError("");
+  };
+
+  const handleLoadReport = async () => {
+    if (!result?.analysis_id) {
+      setReportMessage("No analysis ID available for this result.");
+      return;
+    }
+
+    try {
+      setReportLoading(true);
+      setReportMessage("");
+
+      const response = await fetch(
+        `${API_BASE_URL}/result/${result.analysis_id}/report`
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.detail || "Could not load report.");
+      }
+
+      setReport(data);
+      setReportMessage("Report loaded.");
+    } catch (err) {
+      setReportMessage(
+        err instanceof Error ? err.message : "Could not load report."
+      );
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const handleCopyReport = async () => {
+    if (!report?.plain_text) {
+      setReportMessage("Load the report first.");
+      return;
+    }
+
+    await navigator.clipboard.writeText(report.plain_text);
+    setReportMessage("Report copied.");
+  };
+
+  const handleDownloadReport = () => {
+    if (!report?.plain_text) {
+      setReportMessage("Load the report first.");
+      return;
+    }
+
+    const blob = new Blob([report.plain_text], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `medaix-report-${result?.analysis_id || "analysis"}.txt`;
+    link.click();
+
+    URL.revokeObjectURL(url);
+    setReportMessage("Report downloaded.");
   };
 
   return (
@@ -679,7 +756,11 @@ export default function Home() {
                   {recentReviews.map((review) => (
                     <button
                       key={review.id}
-                      onClick={() => setResult(review.result)}
+                      onClick={() => {
+                        setResult(review.result);
+                        setReport(null);
+                        setReportMessage("");
+                      }}
                       className="w-full rounded-[18px] border border-zinc-200 bg-white px-4 py-3 text-left text-sm transition hover:border-red-100 hover:bg-red-50/20"
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -1017,6 +1098,54 @@ export default function Home() {
                         </p>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="mt-10 border-t border-zinc-200 pt-6">
+                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Structured report
+                    </p>
+
+                    <p className="mt-4 text-sm leading-7 text-zinc-600">
+                      Generate a compact text report with the policy decision,
+                      routing result, model output, safety checks, explainability
+                      details, and disclaimer.
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        onClick={handleLoadReport}
+                        disabled={reportLoading}
+                        className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {reportLoading ? "Loading report..." : "Generate report"}
+                      </button>
+
+                      <button
+                        onClick={handleCopyReport}
+                        className="rounded-xl bg-white px-4 py-2 text-sm text-zinc-700 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
+                      >
+                        Copy report
+                      </button>
+
+                      <button
+                        onClick={handleDownloadReport}
+                        className="rounded-xl bg-white px-4 py-2 text-sm text-zinc-700 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
+                      >
+                        Download .txt
+                      </button>
+                    </div>
+
+                    {reportMessage ? (
+                      <p className="mt-3 text-xs text-zinc-500">
+                        {reportMessage}
+                      </p>
+                    ) : null}
+
+                    {report?.plain_text ? (
+                      <pre className="mt-4 max-h-80 overflow-auto rounded-[18px] bg-white p-4 text-xs leading-6 text-zinc-700 ring-1 ring-zinc-200">
+                        {report.plain_text}
+                      </pre>
+                    ) : null}
                   </div>
 
                   <div className="mt-10 border-t border-zinc-200 pt-6">
