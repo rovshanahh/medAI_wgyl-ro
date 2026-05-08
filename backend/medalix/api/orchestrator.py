@@ -2,6 +2,7 @@ from pathlib import Path
 
 from medalix.audit.audit_trace_builder import AuditTraceBuilder
 from medalix.audit.logger import Logger
+from medalix.config.route_metadata import ROUTE_TO_PREPROCESSING_MODALITY
 from medalix.detection.route_detector import RouteDetector
 from medalix.explainability.explainability_engine import ExplainabilityEngine
 from medalix.ingestion.dicom_converter import DicomConverter
@@ -30,15 +31,6 @@ NON_DIAGNOSTIC_DISCLAIMER = (
 
 
 class Orchestrator:
-    ROUTE_TO_PREPROCESSING_MODALITY = {
-        "brain_mri": "mri",
-        "bone_xray": "xray",
-        "breast_mammography": "mammography",
-        "chest_xray": "xray",
-        "retina_fundus": "fundus",
-        "skin_dermoscopy": "dermoscopy",
-    }
-
     def __init__(self) -> None:
         self.logger = Logger()
         self.trace_builder = AuditTraceBuilder()
@@ -68,7 +60,7 @@ class Orchestrator:
         return result
 
     def _resolve_preprocessing_modality(self, selected_route: str) -> str:
-        return self.ROUTE_TO_PREPROCESSING_MODALITY.get(selected_route, "xray")
+        return ROUTE_TO_PREPROCESSING_MODALITY.get(selected_route, "xray")
 
     def _finalize_and_store(self, state: PipelineState, payload: dict) -> dict:
         payload = self._with_pipeline_debug(state, payload)

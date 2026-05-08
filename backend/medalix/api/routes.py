@@ -1,7 +1,13 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from medalix.api.orchestrator import Orchestrator
+from medalix.config.route_metadata import (
+    ACTIVE_ROUTE_METADATA,
+    INACTIVE_PLACEHOLDERS,
+    SAFETY_ROUTES,
+)
 from medalix.inference.ensemble_model import EnsembleModel
+
 
 router = APIRouter()
 orchestrator = Orchestrator()
@@ -9,76 +15,6 @@ orchestrator = Orchestrator()
 
 SUPPORTED_UPLOADS = [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"]
 
-ACTIVE_ROUTES = [
-    {
-        "route": "brain_mri",
-        "region": "brain",
-        "modality": "mri",
-        "model": "brain_mri_resnet18",
-        "description": "Reviews brain MRI images and returns the most likely tumor-related class.",
-        "status": "ACTIVE",
-    },
-    {
-        "route": "bone_xray",
-        "region": "bone",
-        "modality": "xray",
-        "model": "bone_xray_standard",
-        "description": "Reviews bone X-ray images and separates normal from abnormal cases.",
-        "status": "ACTIVE",
-    },
-    {
-        "route": "breast_mammography",
-        "region": "breast",
-        "modality": "mammography",
-        "model": "breast_mammography_resnet18",
-        "description": "Reviews mammography images and separates benign from malignant cases.",
-        "status": "ACTIVE",
-    },
-    {
-        "route": "chest_xray",
-        "region": "chest",
-        "modality": "xray",
-        "model": "chest_xray_mvp",
-        "description": "Reviews chest X-ray images and highlights possible visible findings.",
-        "status": "ACTIVE",
-    },
-    {
-        "route": "retina_fundus",
-        "region": "retina",
-        "modality": "fundus",
-        "model": "retina_fundus_resnet18",
-        "description": "Reviews eye fundus images and estimates diabetic retinopathy severity.",
-        "status": "ACTIVE",
-    },
-    {
-        "route": "skin_dermoscopy",
-        "region": "skin",
-        "modality": "dermoscopy",
-        "model": "skin_dermoscopy_resnet18",
-        "description": "Reviews skin dermoscopy images and returns the most likely lesion class.",
-        "status": "ACTIVE",
-    },
-]
-
-SAFETY_ROUTES = [
-    {
-        "route": "unknown",
-        "region": None,
-        "modality": None,
-        "model": None,
-        "description": "Stops unsupported or uncertain images before inference.",
-        "status": "STOP_BEFORE_INFERENCE",
-    }
-]
-
-INACTIVE_PLACEHOLDERS = [
-    {
-        "route": "abdomen_ct",
-        "region": "abdomen",
-        "modality": "ct",
-        "status": "INACTIVE",
-    },
-]
 
 @router.get("/health")
 def health():
@@ -93,7 +29,7 @@ def root():
     return {
         "message": "MedAIx backend is running",
         "supported_uploads": SUPPORTED_UPLOADS,
-        "routes": [route["route"] for route in ACTIVE_ROUTES] + ["unknown"],
+        "routes": [route["route"] for route in ACTIVE_ROUTE_METADATA] + ["unknown"],
     }
 
 
@@ -102,7 +38,7 @@ def config():
     return {
         "service": "MedAIx backend",
         "supported_uploads": SUPPORTED_UPLOADS,
-        "active_routes": ACTIVE_ROUTES,
+        "active_routes": ACTIVE_ROUTE_METADATA,
         "safety_routes": SAFETY_ROUTES,
         "inactive_placeholders": INACTIVE_PLACEHOLDERS,
         "disclaimer": (
@@ -115,7 +51,7 @@ def config():
 @router.get("/routes")
 def routes():
     return {
-        "active_routes": ACTIVE_ROUTES,
+        "active_routes": ACTIVE_ROUTE_METADATA,
         "safety_routes": SAFETY_ROUTES,
         "inactive_placeholders": INACTIVE_PLACEHOLDERS,
     }

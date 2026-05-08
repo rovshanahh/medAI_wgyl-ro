@@ -5,18 +5,10 @@ import torch.nn as nn
 from PIL import Image, UnidentifiedImageError
 from torchvision import models, transforms
 
+from medalix.config.route_metadata import ROUTE_TO_REGION_MODALITY
+
 
 class RouteDetector:
-    ROUTE_TO_REGION_MODALITY = {
-        "brain_mri": ("brain", "mri"),
-        "bone_xray": ("bone", "xray"),
-        "breast_mammography": ("breast", "mammography"),
-        "chest_xray": ("chest", "xray"),
-        "retina_fundus": ("retina", "fundus"),
-        "skin_dermoscopy": ("skin", "dermoscopy"),
-        "unknown": (None, None),
-    }
-
     MIN_CONFIDENCE = 0.80
     MIN_MARGIN = 0.30
 
@@ -35,18 +27,6 @@ class RouteDetector:
             raise ValueError("Route detector checkpoint is missing model_state_dict.")
 
         self.class_names = checkpoint["class_names"]
-
-        missing_mappings = [
-            class_name
-            for class_name in self.class_names
-            if class_name not in self.ROUTE_TO_REGION_MODALITY
-        ]
-
-        if missing_mappings:
-            raise ValueError(
-                "Route detector has class names without route mappings: "
-                + ", ".join(missing_mappings)
-            )
 
         self.model = models.resnet18(weights=None)
         self.model.fc = nn.Linear(self.model.fc.in_features, len(self.class_names))
@@ -96,13 +76,9 @@ class RouteDetector:
         confidence = float(probs[pred_idx])
 
         sorted_probs = sorted([float(p) for p in probs], reverse=True)
-        margin = (
-            sorted_probs[0] - sorted_probs[1]
-            if len(sorted_probs) > 1
-            else sorted_probs[0]
-        )
+        margin = sorted_probs[0] - sorted_probs[1] if len(sorted_probs) > 1 else sorted_probs[0]
 
-        raw_region, raw_modality = self.ROUTE_TO_REGION_MODALITY.get(
+        raw_region, raw_modality = ROUTE_TO_REGION_MODALITY.get(
             raw_route_label,
             (None, None),
         )
