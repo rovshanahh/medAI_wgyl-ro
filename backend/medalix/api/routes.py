@@ -1,4 +1,6 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+import os
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
 from medalix.api.orchestrator import Orchestrator
 from medalix.config.route_metadata import (
@@ -7,7 +9,6 @@ from medalix.config.route_metadata import (
     SAFETY_ROUTES,
 )
 from medalix.inference.ensemble_model import EnsembleModel
-from medalix.report.analysis_report_builder import AnalysisReportBuilder
 
 
 router = APIRouter()
@@ -15,6 +16,16 @@ orchestrator = Orchestrator()
 
 
 SUPPORTED_UPLOADS = [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"]
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    expected_api_key = os.getenv("MEDAIX_API_KEY")
+
+    if not expected_api_key:
+        return
+
+    if x_api_key != expected_api_key:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 @router.get("/health")
@@ -58,12 +69,12 @@ def routes():
     }
 
 
-@router.get("/model-cache")
+@router.get("/model-cache", dependencies=[Depends(require_api_key)])
 def model_cache():
     return EnsembleModel.cache_info()
 
 
-@router.post("/model-cache/clear")
+@router.post("/model-cache/clear", dependencies=[Depends(require_api_key)])
 def clear_model_cache():
     EnsembleModel.clear_cache()
     return {
@@ -72,7 +83,7 @@ def clear_model_cache():
     }
 
 
-@router.post("/analyze")
+@router.post("/analyze", dependencies=[Depends(require_api_key)])
 async def analyze_image(file: UploadFile = File(...)):
     content = await file.read()
 
@@ -83,7 +94,7 @@ async def analyze_image(file: UploadFile = File(...)):
     )
 
 
-@router.get("/result/{analysis_id}")
+@router.get("/result/{analysis_id}", dependencies=[Depends(require_api_key)])
 def get_result(analysis_id: str):
     result = orchestrator.get_result(analysis_id)
 
@@ -91,13 +102,3 @@ def get_result(analysis_id: str):
         raise HTTPException(status_code=404, detail="Analysis result not found")
 
     return result
-
-
-@router.get("/result/{analysis_id}/report")
-def get_result_report(analysis_id: str):
-    result = orchestrator.get_result(analysis_id)
-
-    if result is None:
-        raise HTTPException(status_code=404, detail="Analysis result not found")
-
-    return AnalysisReportBuilder.build(result)
