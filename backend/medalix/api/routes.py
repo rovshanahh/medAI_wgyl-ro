@@ -1,6 +1,4 @@
-import os
-
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from medalix.api.orchestrator import Orchestrator
 from medalix.config.route_metadata import (
@@ -14,18 +12,8 @@ from medalix.inference.ensemble_model import EnsembleModel
 router = APIRouter()
 orchestrator = Orchestrator()
 
-
 SUPPORTED_UPLOADS = [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".dcm"]
-
-
-def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
-    expected_api_key = os.getenv("MEDAIX_API_KEY")
-
-    if not expected_api_key:
-        return
-
-    if x_api_key != expected_api_key:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+MAX_BATCH_SIZE = 25
 
 
 @router.get("/health")
@@ -42,6 +30,7 @@ def root():
         "message": "MedAIx backend is running",
         "supported_uploads": SUPPORTED_UPLOADS,
         "routes": [route["route"] for route in ACTIVE_ROUTE_METADATA] + ["unknown"],
+        "max_batch_size": MAX_BATCH_SIZE,
     }
 
 
@@ -53,6 +42,7 @@ def config():
         "active_routes": ACTIVE_ROUTE_METADATA,
         "safety_routes": SAFETY_ROUTES,
         "inactive_placeholders": INACTIVE_PLACEHOLDERS,
+        "max_batch_size": MAX_BATCH_SIZE,
         "disclaimer": (
             "Research-use only. Outputs are non-diagnostic and must not be used "
             "for clinical decision-making."
@@ -69,12 +59,12 @@ def routes():
     }
 
 
-@router.get("/model-cache", dependencies=[Depends(require_api_key)])
+@router.get("/model-cache")
 def model_cache():
     return EnsembleModel.cache_info()
 
 
-@router.post("/model-cache/clear", dependencies=[Depends(require_api_key)])
+@router.post("/model-cache/clear")
 def clear_model_cache():
     EnsembleModel.clear_cache()
     return {
@@ -83,7 +73,7 @@ def clear_model_cache():
     }
 
 
-@router.post("/analyze", dependencies=[Depends(require_api_key)])
+@router.post("/analyze")
 async def analyze_image(file: UploadFile = File(...)):
     content = await file.read()
 
@@ -94,7 +84,73 @@ async def analyze_image(file: UploadFile = File(...)):
     )
 
 
-@router.get("/result/{analysis_id}", dependencies=[Depends(require_api_key)])
+@router.post("/analyze/override")
+async def analyze_image_with_override(
+    file: UploadFile = File(...),
+    route_override: str = Form(...),
+):
+    content = await file.read()
+
+    return orchestrator.execute(
+        filename=file.filename or "upload",
+        content_type=file.content_type,
+        content=content,
+        route_override=route_override,
+    )
+
+
+@router.post("/analyze/batch")
+async def analyze_batch(files: list[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    if len(files) > MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch limit exceeded. Maximum allowed files: {MAX_BATCH_SIZE}",
+        )
+
+    results = []
+
+    for index, file in enumerate(files, start=1):
+        try:
+            content = await file.read()
+
+            result = orchestrator.execute(
+                filename=file.filename or f"upload_{index}",
+                content_type=file.content_type,
+                content=content,
+            )
+
+            results.append(
+                {
+                    "index": index,
+                    "filename": file.filename or f"upload_{index}",
+                    "status": "completed",
+                    "result": result,
+                }
+            )
+
+        except Exception as exc:
+            results.append(
+                {
+                    "index": index,
+                    "filename": file.filename or f"upload_{index}",
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            )
+
+    return {
+        "batch_size": len(files),
+        "max_batch_size": MAX_BATCH_SIZE,
+        "completed": sum(1 for item in results if item["status"] == "completed"),
+        "failed": sum(1 for item in results if item["status"] == "failed"),
+        "results": results,
+    }
+
+
+@router.get("/result/{analysis_id}")
 def get_result(analysis_id: str):
     result = orchestrator.get_result(analysis_id)
 

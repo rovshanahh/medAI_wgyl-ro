@@ -62,6 +62,13 @@ BREAST_MAMMOGRAPHY_LABELS = [
     "Malignant",
 ]
 
+ABDOMEN_CT_LABELS = [
+    "Cyst",
+    "Normal",
+    "Stone",
+    "Tumor",
+]
+
 CHEST_REPO_ID = "itsomk/chexpert-densenet121"
 CHEST_FILENAME = "pytorch_model.safetensors"
 
@@ -182,6 +189,11 @@ class SkinDermoscopyResNet18(ResNet18Classifier):
 
 class BreastMammographyResNet18(ResNet18Classifier):
     def __init__(self, num_classes: int = 2, dropout_p: float = 0.2):
+        super().__init__(num_classes=num_classes, dropout_p=dropout_p)
+
+
+class AbdomenCtResNet18(ResNet18Classifier):
+    def __init__(self, num_classes: int = 4, dropout_p: float = 0.2):
         super().__init__(num_classes=num_classes, dropout_p=dropout_p)
 
 
@@ -349,6 +361,34 @@ def load_breast_mammography_model(
     return model
 
 
+def load_abdomen_ct_model(
+    model_path: str,
+    device: torch.device,
+) -> AbdomenCtResNet18:
+    checkpoint_path = Path(model_path)
+
+    if not checkpoint_path.exists():
+        raise ValueError(f"Abdomen CT model checkpoint not found at: {model_path}")
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        num_classes = int(checkpoint.get("num_classes", len(ABDOMEN_CT_LABELS)))
+    else:
+        state_dict = checkpoint
+        num_classes = len(ABDOMEN_CT_LABELS)
+
+    state_dict = _remap_resnet_state_dict_keys(state_dict)
+
+    model = AbdomenCtResNet18(num_classes=num_classes, dropout_p=0.2)
+    model.load_state_dict(state_dict, strict=True)
+    model.to(device)
+    model.eval()
+
+    return model
+
+
 class EnsembleModel:
     def __init__(self, model_metadata=None, mc_passes: int = 10):
         self.model_metadata = model_metadata
@@ -457,6 +497,16 @@ class EnsembleModel:
             return {
                 "model": load_breast_mammography_model(self._model_path(), self.device),
                 "labels": BREAST_MAMMOGRAPHY_LABELS,
+                "task_type": "multiclass",
+            }
+
+        if region == "abdomen" and modality == "ct":
+            if architecture != "resnet18":
+                raise ValueError(f"Unsupported architecture for abdomen CT route: {architecture}")
+
+            return {
+                "model": load_abdomen_ct_model(self._model_path(), self.device),
+                "labels": ABDOMEN_CT_LABELS,
                 "task_type": "multiclass",
             }
 

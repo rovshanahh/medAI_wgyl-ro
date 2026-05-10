@@ -4,6 +4,7 @@ from medalix.detection.route_detector import RouteDetector
 
 
 TEST_IMAGES = [
+    "test_samples/abdomen_ct.jpg",
     "test_samples/brain_mri.jpg",
     "test_samples/bone_xray.png",
     "test_samples/chest_xray.jpg",

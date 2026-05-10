@@ -29,6 +29,14 @@ type AppConfig = {
     description: string;
     status: string;
   }[];
+  inactive_placeholders?: {
+    route: string;
+    region?: string;
+    modality?: string;
+    description?: string;
+    status?: string;
+  }[];
+  max_batch_size?: number;
   disclaimer?: string;
 };
 
@@ -41,6 +49,7 @@ type AnalysisResponse = {
     message?: string;
     selected_route?: string;
     route_scores?: Record<string, number>;
+    manual_override?: boolean;
     top_level_gate?: {
       route_detector?: {
         route_label?: string;
@@ -51,6 +60,11 @@ type AnalysisResponse = {
         requires_confirmation?: boolean;
         probabilities?: Record<string, number>;
         reason?: string;
+        manual_override?: boolean;
+        override_metadata?: {
+          requested_route?: string;
+          original_route_result?: Record<string, unknown>;
+        };
       };
       conversion?: {
         converted?: boolean;
@@ -67,6 +81,7 @@ type AnalysisResponse = {
     requires_confirmation?: boolean;
     supported?: boolean;
     reason?: string;
+    manual_override?: boolean;
   };
   inference?: {
     top_label?: string;
@@ -137,17 +152,9 @@ type RecentReview = {
   result: AnalysisResponse;
 };
 
-type AnalysisReport = {
-  summary?: Record<string, string | number | null>;
-  sections?: Record<string, unknown>;
-  plain_text?: string;
-  disclaimer?: string;
-};
-
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const BACKEND_URL = `${API_BASE_URL}/analyze`;
 const HEATMAP_BASE_URL = API_BASE_URL;
 
 const FALLBACK_ROUTES = [
@@ -236,6 +243,8 @@ function getRouteTitle(route?: string | null) {
       return "Retina fundus review";
     case "skin_dermoscopy":
       return "Skin dermoscopy review";
+    case "abdomen_ct":
+      return "Abdomen CT review";
     case "unknown":
       return "Unsupported or uncertain input";
     default:
@@ -252,8 +261,8 @@ function getOutputLabel(route?: string | null) {
     case "brain_mri":
       return "Model output";
     case "bone_xray":
-      return "Classification output";
     case "breast_mammography":
+    case "abdomen_ct":
       return "Classification output";
     case "chest_xray":
       return "Primary finding";
@@ -271,14 +280,13 @@ function getPolicyDisplay(action?: string) {
     case "ANSWER":
       return {
         title: "Answer allowed",
-        description:
-          "The system found enough support to show the model output.",
+        description: "The system found enough support to show the model output.",
       };
     case "ESCALATE":
       return {
         title: "Human review recommended",
         description:
-          "The model produced an output, but confidence or uncertainty suggests expert review.",
+          "The model produced an output, but confidence, uncertainty, or routing ambiguity suggests expert review.",
       };
     case "REQUEST_EVIDENCE":
       return {
@@ -345,6 +353,8 @@ function getRouteTone(route?: string | null) {
       return "bg-violet-50 text-violet-700 ring-1 ring-violet-100";
     case "skin_dermoscopy":
       return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
+    case "abdomen_ct":
+      return "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100";
     case "unknown":
       return "bg-red-50 text-red-700 ring-1 ring-red-100";
     default:
@@ -357,10 +367,9 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [recentReviews, setRecentReviews] = useState<RecentReview[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
-  const [report, setReport] = useState<AnalysisReport | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportMessage, setReportMessage] = useState("");
+  const [confirmedRoute, setConfirmedRoute] = useState("");
   const [loading, setLoading] = useState(false);
+  const [overrideLoading, setOverrideLoading] = useState(false);
   const [error, setError] = useState("");
 
   const isDicomFile = file?.name.toLowerCase().endsWith(".dcm") ?? false;
@@ -380,7 +389,6 @@ export default function Home() {
     const loadConfig = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/config`);
-
         if (!response.ok) return;
 
         const data = await response.json();
@@ -422,6 +430,20 @@ export default function Home() {
   const inferenceRan = Boolean(result?.inference?.top_label);
   const policyDisplay = getPolicyDisplay(result?.policy?.action);
 
+  const manualOverrideUsed =
+    Boolean(result?.input_gate?.manual_override) ||
+    Boolean(result?.detection?.manual_override) ||
+    Boolean(routeDetector?.manual_override);
+
+  const needsManualConfirmation =
+    Boolean(result) &&
+    !manualOverrideUsed &&
+    (result?.policy?.action === "STOP" ||
+      result?.policy?.action === "ESCALATE" ||
+      result?.routing?.requires_confirmation === true ||
+      result?.detection?.requires_confirmation === true ||
+      result?.input_gate?.accepted_for_analysis === false);
+
   const warnings = [
     ...(result?.policy?.warnings ?? []),
     ...(result?.quality?.warnings ?? []),
@@ -429,12 +451,30 @@ export default function Home() {
     ...(result?.explainability?.warning ? [result.explainability.warning] : []),
   ].filter(Boolean);
 
+  const addRecentReview = (data: AnalysisResponse, sourceFile: File) => {
+    const route =
+      data?.input_gate?.selected_route ||
+      data?.input_gate?.top_level_gate?.route_detector?.route_label ||
+      "unknown";
+
+    const review: RecentReview = {
+      id: `${Date.now()}-${sourceFile.name}`,
+      filename: sourceFile.name,
+      route,
+      policy: data?.policy?.action || "—",
+      output: data?.inference?.top_label || "No inference",
+      confidence: data?.inference?.top_probability,
+      result: data,
+    };
+
+    setRecentReviews((previous) => [review, ...previous].slice(0, 5));
+  };
+
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0] ?? null;
     setFile(selected);
     setResult(null);
-    setReport(null);
-    setReportMessage("");
+    setConfirmedRoute("");
     setError("");
   };
 
@@ -448,13 +488,12 @@ export default function Home() {
       setLoading(true);
       setError("");
       setResult(null);
-      setReport(null);
-      setReportMessage("");
+      setConfirmedRoute("");
 
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(BACKEND_URL, {
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
         body: formData,
       });
@@ -466,23 +505,7 @@ export default function Home() {
       }
 
       setResult(data);
-
-      const route =
-        data?.input_gate?.selected_route ||
-        data?.input_gate?.top_level_gate?.route_detector?.route_label ||
-        "unknown";
-
-      const review: RecentReview = {
-        id: `${Date.now()}-${file.name}`,
-        filename: file.name,
-        route,
-        policy: data?.policy?.action || "—",
-        output: data?.inference?.top_label || "No inference",
-        confidence: data?.inference?.top_probability,
-        result: data,
-      };
-
-      setRecentReviews((previous) => [review, ...previous].slice(0, 5));
+      addRecentReview(data, file);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -490,72 +513,62 @@ export default function Home() {
     }
   };
 
+  const handleRunWithConfirmedRoute = async () => {
+    if (!file) {
+      setError("Please choose an image first.");
+      return;
+    }
+  
+    if (!confirmedRoute) {
+      setError("Please select a confirmed route first.");
+      return;
+    }
+  
+    try {
+      setOverrideLoading(true);
+      setError("");
+  
+      console.log("Running override with route:", confirmedRoute);
+  
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("route_override", confirmedRoute);
+  
+      const response = await fetch(`${API_BASE_URL}/analyze/override`, {
+        method: "POST",
+        body: formData,
+      });
+  
+      const text = await response.text();
+      console.log("Override raw response:", text);
+  
+      let data: AnalysisResponse & { detail?: string };
+  
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || "Override request failed.");
+      }
+  
+      if (!response.ok) {
+        throw new Error(data?.detail || "Override request failed.");
+      }
+  
+      setResult(data);
+      addRecentReview(data, file);
+      setConfirmedRoute("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setOverrideLoading(false);
+    }
+  };
+
   const handleReset = () => {
     setFile(null);
     setResult(null);
-    setReport(null);
-    setReportMessage("");
+    setConfirmedRoute("");
     setError("");
-  };
-
-  const handleLoadReport = async () => {
-    if (!result?.analysis_id) {
-      setReportMessage("No analysis ID available for this result.");
-      return;
-    }
-
-    try {
-      setReportLoading(true);
-      setReportMessage("");
-
-      const response = await fetch(
-        `${API_BASE_URL}/result/${result.analysis_id}/report`
-      );
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.detail || "Could not load report.");
-      }
-
-      setReport(data);
-      setReportMessage("Report loaded.");
-    } catch (err) {
-      setReportMessage(
-        err instanceof Error ? err.message : "Could not load report."
-      );
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
-  const handleCopyReport = async () => {
-    if (!report?.plain_text) {
-      setReportMessage("Load the report first.");
-      return;
-    }
-
-    await navigator.clipboard.writeText(report.plain_text);
-    setReportMessage("Report copied.");
-  };
-
-  const handleDownloadReport = () => {
-    if (!report?.plain_text) {
-      setReportMessage("Load the report first.");
-      return;
-    }
-
-    const blob = new Blob([report.plain_text], {
-      type: "text/plain;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `medaix-report-${result?.analysis_id || "analysis"}.txt`;
-    link.click();
-
-    URL.revokeObjectURL(url);
-    setReportMessage("Report downloaded.");
   };
 
   return (
@@ -585,22 +598,34 @@ export default function Home() {
           </div>
 
           <div className="flex flex-wrap items-center gap-5 text-sm text-zinc-600">
-            <Link href="/" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <House size={16} />
               Home
             </Link>
 
-            <Link href="/workspace" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/workspace"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <LayoutDashboard size={16} />
               Workspace
             </Link>
 
-            <Link href="/about" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/about"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <CircleHelp size={16} />
               About
             </Link>
 
-            <Link href="/contact" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
+            <Link
+              href="/contact"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
               <Mail size={16} />
               Contact
             </Link>
@@ -681,7 +706,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="workspace" className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <section
+          id="workspace"
+          className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]"
+        >
           <aside>
             <h3 className="mb-4 text-base font-medium">Upload image</h3>
 
@@ -717,13 +745,18 @@ export default function Home() {
 
             {previewUrl && !isDicomFile ? (
               <div className="mt-4 overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
-                <img src={previewUrl} alt="Preview" className="h-auto w-full object-cover" />
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  className="h-auto w-full object-cover"
+                />
               </div>
             ) : isDicomFile ? (
               <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-[24px] border border-zinc-200 bg-white px-6 text-center text-sm text-zinc-500">
                 <p className="font-medium text-zinc-700">DICOM file selected</p>
                 <p className="mt-2">
-                  Browser preview is unavailable for .dcm files. The backend will convert it for analysis.
+                  Browser preview is unavailable for .dcm files. The backend will
+                  convert it for analysis.
                 </p>
               </div>
             ) : (
@@ -731,6 +764,44 @@ export default function Home() {
                 Image preview
               </div>
             )}
+
+            {needsManualConfirmation ? (
+              <div className="mt-5 rounded-[20px] border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm font-semibold text-amber-900">
+                  Manual route confirmation
+                </p>
+
+                <p className="mt-2 text-xs leading-5 text-amber-800">
+                  The system did not safely continue with automatic routing.
+                  Select the correct route only if a human evaluator knows the
+                  intended image type.
+                </p>
+
+                <select
+                  value={confirmedRoute}
+                  onChange={(event) => setConfirmedRoute(event.target.value)}
+                  className="mt-4 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-amber-400"
+                >
+                  <option value="">Select confirmed route</option>
+                  {activeRoutes.map((routeInfo) => (
+                    <option key={routeInfo.route} value={routeInfo.route}>
+                      {formatLabel(routeInfo.route)}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleRunWithConfirmedRoute}
+                  disabled={overrideLoading}
+                  className="mt-4 w-full rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {overrideLoading
+                    ? "Running confirmed route..."
+                    : "Run again with confirmed route"}
+                </button>
+              </div>
+            ) : null}
 
             {error ? (
               <div className="mt-4 rounded-[18px] bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
@@ -748,8 +819,7 @@ export default function Home() {
                       key={review.id}
                       onClick={() => {
                         setResult(review.result);
-                        setReport(null);
-                        setReportMessage("");
+                        setConfirmedRoute("");
                       }}
                       className="w-full rounded-[18px] border border-zinc-200 bg-white px-4 py-3 text-left text-sm transition hover:border-red-100 hover:bg-red-50/20"
                     >
@@ -757,14 +827,20 @@ export default function Home() {
                         <span className="max-w-[150px] truncate font-medium text-zinc-900">
                           {review.filename}
                         </span>
-                        <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium ${getRouteTone(review.route)}`}>
+                        <span
+                          className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium ${getRouteTone(
+                            review.route
+                          )}`}
+                        >
                           {formatLabel(review.route)}
                         </span>
                       </div>
 
                       <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
                         <span>{review.policy}</span>
-                        <span className="max-w-[130px] truncate">{review.output}</span>
+                        <span className="max-w-[130px] truncate">
+                          {review.output}
+                        </span>
                       </div>
 
                       <div className="mt-1 text-xs text-zinc-400">
@@ -812,7 +888,11 @@ export default function Home() {
                         Risk level
                       </p>
                       <div className="mt-3">
-                        <span className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getRiskTone(result.policy?.risk_category)}`}>
+                        <span
+                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getRiskTone(
+                            result.policy?.risk_category
+                          )}`}
+                        >
                           {result.policy?.risk_category || "—"}
                         </span>
                       </div>
@@ -823,7 +903,11 @@ export default function Home() {
                         Image check
                       </p>
                       <div className="mt-3">
-                        <span className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getInputTone(result.input_gate?.accepted_for_analysis)}`}>
+                        <span
+                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getInputTone(
+                            result.input_gate?.accepted_for_analysis
+                          )}`}
+                        >
                           {result.input_gate?.accepted_for_analysis === true
                             ? "Accepted"
                             : result.input_gate?.accepted_for_analysis === false
@@ -838,12 +922,26 @@ export default function Home() {
                         Route
                       </p>
                       <div className="mt-3">
-                        <span className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium capitalize ${getRouteTone(selectedRoute)}`}>
+                        <span
+                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium capitalize ${getRouteTone(
+                            selectedRoute
+                          )}`}
+                        >
                           {formatLabel(selectedRoute)}
                         </span>
                       </div>
                     </div>
                   </div>
+
+                  {manualOverrideUsed ? (
+                    <div className="mt-8 rounded-[18px] bg-amber-50 px-4 py-4 text-sm text-amber-800 ring-1 ring-amber-100">
+                      <p className="font-medium">Manual override was used</p>
+                      <p className="mt-2 leading-6">
+                        The automatic detector result was overridden by a human
+                        selected route. This should be reviewed carefully.
+                      </p>
+                    </div>
+                  ) : null}
 
                   <div className="mt-10 border-t border-zinc-200 pt-6">
                     <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
@@ -859,7 +957,9 @@ export default function Home() {
 
                   {conversion?.converted ? (
                     <div className="mt-10 rounded-[18px] bg-white px-4 py-4 text-sm text-zinc-700 ring-1 ring-zinc-200">
-                      <p className="font-medium text-zinc-900">Format conversion</p>
+                      <p className="font-medium text-zinc-900">
+                        Format conversion
+                      </p>
                       <p className="mt-2">
                         {conversion.message || "DICOM was converted for analysis."}
                       </p>
@@ -875,7 +975,9 @@ export default function Home() {
                         {getOutputLabel(selectedRoute)}
                       </p>
                       <p className="mt-3 break-words text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan ? result.inference?.top_label : "No inference was run"}
+                        {inferenceRan
+                          ? result.inference?.top_label
+                          : "No inference was run"}
                       </p>
                     </div>
 
@@ -884,7 +986,9 @@ export default function Home() {
                         Output confidence
                       </p>
                       <p className="mt-3 text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan ? formatPercent(result.inference?.top_probability) : "—"}
+                        {inferenceRan
+                          ? formatPercent(result.inference?.top_probability)
+                          : "—"}
                       </p>
                     </div>
                   </div>
@@ -916,17 +1020,21 @@ export default function Home() {
 
                     <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
                       {Object.keys(routeProbabilities).length ? (
-                        Object.entries(routeProbabilities).map(([label, probability]) => (
-                          <div
-                            key={label}
-                            className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
-                          >
-                            <span className="capitalize">{formatLabel(label)}</span>
-                            <span className="font-medium text-zinc-900">
-                              {formatPercent(probability)}
-                            </span>
-                          </div>
-                        ))
+                        Object.entries(routeProbabilities).map(
+                          ([label, probability]) => (
+                            <div
+                              key={label}
+                              className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
+                            >
+                              <span className="capitalize">
+                                {formatLabel(label)}
+                              </span>
+                              <span className="font-medium text-zinc-900">
+                                {formatPercent(probability)}
+                              </span>
+                            </div>
+                          )
+                        )
                       ) : (
                         <div className="py-3 text-sm text-zinc-500">
                           No route probabilities available
@@ -950,8 +1058,13 @@ export default function Home() {
                             <span className="font-medium text-zinc-900">
                               {formatLabel(candidate.route)}
                             </span>
-                            <span>Probability: {formatPercent(candidate.probability)}</span>
-                            <span>Nonconformity: {formatNumber(candidate.nonconformity)}</span>
+                            <span>
+                              Probability: {formatPercent(candidate.probability)}
+                            </span>
+                            <span>
+                              Nonconformity:{" "}
+                              {formatNumber(candidate.nonconformity)}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -1017,7 +1130,10 @@ export default function Home() {
                               ? "No"
                               : "—"}
                         </p>
-                        <p>Input confidence: {formatPercent(result.input_gate?.confidence)}</p>
+                        <p>
+                          Input confidence:{" "}
+                          {formatPercent(result.input_gate?.confidence)}
+                        </p>
                       </div>
 
                       <div>
@@ -1031,13 +1147,29 @@ export default function Home() {
                       </div>
 
                       <div>
+                        <p>
+                          Manual override:{" "}
+                          {manualOverrideUsed ? "Yes" : "No"}
+                        </p>
+                        <p>
+                          Requested override:{" "}
+                          {formatLabel(
+                            routeDetector?.override_metadata?.requested_route
+                          )}
+                        </p>
+                      </div>
+
+                      <div>
                         <p>Detected region: {result.detection?.region || "—"}</p>
                         <p>Detected modality: {result.detection?.modality || "—"}</p>
                       </div>
 
                       <div>
                         <p>Routing method: {result.routing?.method || "—"}</p>
-                        <p>Conformal set size: {result.routing?.set_size ?? "—"}</p>
+                        <p>
+                          Conformal set size:{" "}
+                          {result.routing?.set_size ?? "—"}
+                        </p>
                       </div>
 
                       <div>
@@ -1046,7 +1178,10 @@ export default function Home() {
                       </div>
 
                       <div>
-                        <p>Nonconformity: {formatNumber(result.routing?.nonconformity)}</p>
+                        <p>
+                          Nonconformity:{" "}
+                          {formatNumber(result.routing?.nonconformity)}
+                        </p>
                         <p>
                           Requires confirmation:{" "}
                           {result.routing?.requires_confirmation ? "Yes" : "No"}
@@ -1087,54 +1222,6 @@ export default function Home() {
                         </p>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="mt-10 border-t border-zinc-200 pt-6">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                      Structured report
-                    </p>
-
-                    <p className="mt-4 text-sm leading-7 text-zinc-600">
-                      Generate a compact text report with the policy decision,
-                      routing result, model output, safety checks, explainability
-                      details, and disclaimer.
-                    </p>
-
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        onClick={handleLoadReport}
-                        disabled={reportLoading}
-                        className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {reportLoading ? "Loading report..." : "Generate report"}
-                      </button>
-
-                      <button
-                        onClick={handleCopyReport}
-                        className="rounded-xl bg-white px-4 py-2 text-sm text-zinc-700 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
-                      >
-                        Copy report
-                      </button>
-
-                      <button
-                        onClick={handleDownloadReport}
-                        className="rounded-xl bg-white px-4 py-2 text-sm text-zinc-700 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
-                      >
-                        Download .txt
-                      </button>
-                    </div>
-
-                    {reportMessage ? (
-                      <p className="mt-3 text-xs text-zinc-500">
-                        {reportMessage}
-                      </p>
-                    ) : null}
-
-                    {report?.plain_text ? (
-                      <pre className="mt-4 max-h-80 overflow-auto rounded-[18px] bg-white p-4 text-xs leading-6 text-zinc-700 ring-1 ring-zinc-200">
-                        {report.plain_text}
-                      </pre>
-                    ) : null}
                   </div>
 
                   <div className="mt-10 border-t border-zinc-200 pt-6">
@@ -1211,17 +1298,26 @@ export default function Home() {
               Quick links
             </h4>
             <div className="space-y-2 text-sm text-zinc-600">
-              <Link href="/" className="inline-flex items-center gap-2 hover:text-zinc-900">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 hover:text-zinc-900"
+              >
                 <House size={16} />
                 Home
               </Link>
               <br />
-              <Link href="/workspace" className="inline-flex items-center gap-2 hover:text-zinc-900">
+              <Link
+                href="/workspace"
+                className="inline-flex items-center gap-2 hover:text-zinc-900"
+              >
                 <LayoutDashboard size={16} />
                 Workspace
               </Link>
               <br />
-              <Link href="/about" className="inline-flex items-center gap-2 hover:text-zinc-900">
+              <Link
+                href="/about"
+                className="inline-flex items-center gap-2 hover:text-zinc-900"
+              >
                 <CircleHelp size={16} />
                 About
               </Link>

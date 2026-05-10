@@ -5,6 +5,7 @@ from medalix.api.orchestrator import Orchestrator
 
 
 TEST_FILES = {
+    "abdomen_ct": "test_samples/abdomen_ct.jpg",
     "brain_mri": "test_samples/brain_mri.jpg",
     "bone_xray": "test_samples/bone_xray.png",
     "chest_xray": "test_samples/chest_xray.jpg",
@@ -134,9 +135,9 @@ def print_table(rows: list[dict]) -> None:
         for i, header in enumerate(headers)
     ]
 
-    print("\n" + "=" * 120)
+    print("\n" + "=" * 130)
     print("ACTIVE ROUTE EVALUATION SUMMARY")
-    print("=" * 120)
+    print("=" * 130)
 
     header_line = " | ".join(header.ljust(widths[i]) for i, header in enumerate(headers))
     print(header_line)
@@ -145,7 +146,7 @@ def print_table(rows: list[dict]) -> None:
     for row in table_rows:
         print(" | ".join(str(value).ljust(widths[i]) for i, value in enumerate(row)))
 
-    print("=" * 120)
+    print("=" * 130)
 
 
 def build_summary(rows: list[dict]) -> dict:

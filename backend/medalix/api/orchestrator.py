@@ -2,7 +2,8 @@ from pathlib import Path
 
 from medalix.audit.audit_trace_builder import AuditTraceBuilder
 from medalix.audit.logger import Logger
-from medalix.config.route_metadata import ROUTE_TO_PREPROCESSING_MODALITY
+from medalix.config.route_metadata import ACTIVE_ROUTE_METADATA, ROUTE_TO_PREPROCESSING_MODALITY
+from medalix.detection.conformal_router import ConformalRouter
 from medalix.detection.route_detector import RouteDetector
 from medalix.explainability.explainability_engine import ExplainabilityEngine
 from medalix.ingestion.dicom_converter import DicomConverter
@@ -30,6 +31,12 @@ NON_DIAGNOSTIC_DISCLAIMER = (
 )
 
 
+ACTIVE_ROUTE_LOOKUP = {
+    route["route"]: route
+    for route in ACTIVE_ROUTE_METADATA
+}
+
+
 class Orchestrator:
     def __init__(self) -> None:
         self.logger = Logger()
@@ -47,6 +54,7 @@ class Orchestrator:
         self.model_router = ModelRouter(self.model_registry)
 
         self.route_detector = RouteDetector()
+        self.conformal_router = ConformalRouter()
         self.dicom_converter = DicomConverter()
 
     def get_result(self, analysis_id: str) -> dict | None:
@@ -96,6 +104,50 @@ class Orchestrator:
             "message": "DICOM image converted to PNG-compatible bytes for MVP inference pipeline.",
         }
 
+    def _apply_manual_route_override(
+        self,
+        route_result: dict,
+        route_override: str | None,
+    ) -> dict:
+        if not route_override:
+            return route_result
+
+        route_override = route_override.strip()
+
+        if route_override not in ACTIVE_ROUTE_LOOKUP:
+            raise ValueError(f"Manual route override is not supported: {route_override}")
+
+        metadata = ACTIVE_ROUTE_LOOKUP[route_override]
+        original_route = dict(route_result or {})
+
+        probabilities = original_route.get("probabilities", {}) or {}
+        probabilities = dict(probabilities)
+        probabilities[route_override] = max(
+            float(probabilities.get(route_override, 0.0)),
+            float(original_route.get("confidence") or 0.0),
+        )
+
+        return {
+            "route_label": route_override,
+            "raw_route_label": original_route.get("raw_route_label") or original_route.get("route_label"),
+            "region": metadata.get("region"),
+            "modality": metadata.get("modality"),
+            "confidence": float(original_route.get("confidence") or 1.0),
+            "margin": original_route.get("margin"),
+            "requires_confirmation": False,
+            "supported": True,
+            "probabilities": probabilities,
+            "reason": (
+                f"Manual route override selected '{route_override}'. "
+                "Original detector result was kept in override_metadata."
+            ),
+            "manual_override": True,
+            "override_metadata": {
+                "requested_route": route_override,
+                "original_route_result": original_route,
+            },
+        }
+
     def _build_input_gate_result(
         self,
         route_result: dict | None = None,
@@ -109,15 +161,20 @@ class Orchestrator:
             "accepted_for_analysis": supported,
             "confidence": route_result.get("confidence"),
             "message": (
-                "Input accepted by multi-class route detector."
-                if supported
-                else route_result.get(
-                    "reason",
-                    "Input not accepted by multi-class route detector.",
+                route_result.get("reason")
+                if route_result.get("manual_override")
+                else (
+                    "Input accepted by multi-class route detector."
+                    if supported
+                    else route_result.get(
+                        "reason",
+                        "Input not accepted by multi-class route detector.",
+                    )
                 )
             ),
             "selected_route": route_result.get("route_label"),
             "route_scores": route_result.get("probabilities", {}),
+            "manual_override": bool(route_result.get("manual_override", False)),
             "top_level_gate": {
                 "route_detector": route_result,
                 "conversion": conversion_result,
@@ -134,6 +191,7 @@ class Orchestrator:
             "requires_confirmation": bool(route_result.get("requires_confirmation", True)),
             "supported": bool(route_result.get("supported", False)),
             "reason": route_result.get("reason"),
+            "manual_override": bool(route_result.get("manual_override", False)),
         }
 
     def _build_routing_result(
@@ -157,6 +215,12 @@ class Orchestrator:
                 "routing_candidates",
                 accepted_findings_set,
             ),
+            "routing_candidate_details": raw_routing_result.get(
+                "routing_candidate_details",
+                [],
+            ),
+            "method": raw_routing_result.get("method"),
+            "reason": raw_routing_result.get("reason"),
         }
 
     def _build_policy_result(
@@ -320,7 +384,44 @@ class Orchestrator:
             self._base_payload(state, "Analysis stopped before inference"),
         )
 
-    def execute(self, filename: str, content_type: str | None, content: bytes) -> dict:
+    def _pause_for_route_confirmation(self, state: PipelineState) -> dict:
+        state.ood_result = {}
+        state.explainability_result = {}
+        state.policy_result = self._build_policy_result(
+            action="ESCALATE",
+            reason=state.routing_result.get(
+                "reason",
+                "Routing requires human confirmation before inference.",
+            ),
+            risk_category="MODERATE",
+            warnings=["Conformal route set requires confirmation"],
+        )
+        state.trace = self._build_trace(state)
+
+        self.logger.warn(
+            {
+                "event": "conformal_routing_requires_confirmation",
+                "analysis_id": state.analysis_id,
+                "filename": state.filename,
+                "route_set": state.routing_result.get("accepted_findings_set", []),
+            }
+        )
+
+        return self._finalize_and_store(
+            state,
+            self._base_payload(
+                state,
+                "Analysis paused because routing requires human confirmation",
+            ),
+        )
+
+    def execute(
+        self,
+        filename: str,
+        content_type: str | None,
+        content: bytes,
+        route_override: str | None = None,
+    ) -> dict:
         state = PipelineState(
             analysis_id=self.session_store.create_analysis_id(),
             filename=filename,
@@ -344,6 +445,7 @@ class Orchestrator:
 
             state.set_stage("route_detection")
             route_result = self.route_detector.predict(working_content)
+            route_result = self._apply_manual_route_override(route_result, route_override)
 
             state.input_gate_result = self._build_input_gate_result(
                 route_result=route_result,
@@ -373,7 +475,6 @@ class Orchestrator:
                 )
 
             selected_route = route_result["route_label"]
-            route_name = f"{route_result['region']}:{route_result['modality']}"
 
             state.set_stage("preprocessing")
             preprocessor = PreprocessingPipeline()
@@ -390,19 +491,14 @@ class Orchestrator:
             state.quality_result = self._build_quality_result(raw_quality_result)
 
             state.set_stage("routing")
-            raw_routing_result = {
-                "accepted_findings_set": [route_name],
-                "set_size": 1,
-                "requires_confirmation": False,
-                "alpha": 0.0,
-                "threshold": 0.0,
-                "top_probability": route_result.get("confidence"),
-                "nonconformity": 1.0 - float(route_result.get("confidence") or 0.0),
-                "routing_candidates": [route_name],
-                "selected_model": None,
-            }
-
+            raw_routing_result = self.conformal_router.route(route_result)
             state.routing_result = self._build_routing_result(raw_routing_result)
+
+            if (
+                state.routing_result.get("requires_confirmation", False)
+                and not route_result.get("manual_override", False)
+            ):
+                return self._pause_for_route_confirmation(state)
 
             state.set_stage("registry")
             try:

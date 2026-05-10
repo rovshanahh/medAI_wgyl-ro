@@ -1,5 +1,5 @@
 {
-  "registry_version": "0.7.0",
+  "registry_version": "0.8.0",
   "routes": [
     {
       "region": "chest",
@@ -24,7 +24,7 @@
     {
       "region": "abdomen",
       "modality": "ct",
-      "model_id": "abdomen_ct_placeholder"
+      "model_id": "abdomen_ct_resnet18"
     },
     {
       "region": "breast",
@@ -86,17 +86,19 @@
       "model_path": "reference_data/models/retina_fundus_resnet18.pth",
       "ensemble_members": []
     },
-    "abdomen_ct_placeholder": {
-      "model_id": "abdomen_ct_placeholder",
-      "version": "0.1.0",
-      "architecture": "placeholder",
+    "abdomen_ct_resnet18": {
+      "model_id": "abdomen_ct_resnet18",
+      "version": "1.0.0",
+      "architecture": "resnet18",
       "region": "abdomen",
       "modality": "ct",
       "input_shape": [1, 3, 224, 224],
-      "status": "INACTIVE",
+      "status": "ACTIVE",
       "checksum": "",
-      "model_path": "",
-      "ensemble_members": []
+      "model_path": "reference_data/models/abdomen_ct_resnet18.pth",
+      "ensemble_members": [],
+      "class_names": ["Cyst", "Normal", "Stone", "Tumor"],
+      "description": "2D kidney CT classifier for cyst, normal, stone, and tumor classes."
     },
     "breast_mammography_resnet18": {
       "model_id": "breast_mammography_resnet18",

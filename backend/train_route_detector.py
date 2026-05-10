@@ -23,6 +23,7 @@ LR = 1e-4
 SEED = 42
 
 EXPECTED_CLASSES = [
+    "abdomen_ct",
     "bone_xray",
     "brain_mri",
     "breast_mammography",
