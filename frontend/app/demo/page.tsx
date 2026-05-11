@@ -187,10 +187,17 @@ export default function DemoPage() {
 
   const heatmapRaw = result?.explainability?.heatmap_path || "";
   const heatmapUrl = heatmapRaw
-    ? heatmapRaw.startsWith("http://") || heatmapRaw.startsWith("https://")
-      ? heatmapRaw
-      : `${API_BASE_URL}${heatmapRaw}`
+    ? `${
+        heatmapRaw.startsWith("http://") || heatmapRaw.startsWith("https://")
+          ? heatmapRaw
+          : `${API_BASE_URL}${heatmapRaw}`
+      }?v=${result?.analysis_id || Date.now()}`
     : "";
+
+  const inputImageUrl =
+    demoResult && !result?.filename?.toLowerCase().endsWith(".dcm")
+      ? `${API_BASE_URL}/demo/image/${demoResult.case_id}`
+      : "";
 
   const manualOverrideUsed =
     Boolean(result?.input_gate?.manual_override) ||
@@ -557,26 +564,48 @@ export default function DemoPage() {
                   ) : null}
                 </div>
 
-                <aside>
-                  <p className="mb-4 text-xs uppercase tracking-[0.18em] text-zinc-400">
-                    Focus map
-                  </p>
+                <aside className="space-y-6">
+                  <div>
+                    <p className="mb-4 text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Demo input image
+                    </p>
 
-                  {heatmapUrl ? (
-                    <div className="overflow-hidden rounded-[18px] border border-zinc-200 bg-white shadow-[0_12px_30px_rgba(0,0,0,0.04)]">
-                      <img
-                        src={heatmapUrl}
-                        alt="Demo heatmap"
-                        className="h-auto w-full object-cover"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[260px] items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-zinc-400">
-                      Focus map unavailable
-                    </div>
-                  )}
+                    {inputImageUrl ? (
+                      <div className="overflow-hidden rounded-[18px] border border-zinc-200 bg-white shadow-[0_12px_30px_rgba(0,0,0,0.04)]">
+                        <img
+                          src={inputImageUrl}
+                          alt="Demo input"
+                          className="h-auto w-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[220px] items-center justify-center rounded-[24px] border border-zinc-200 bg-white px-5 text-center text-sm text-zinc-400">
+                        DICOM input preview is unavailable in browser.
+                      </div>
+                    )}
+                  </div>
 
-                  <div className="mt-4 rounded-[18px] border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
+                  <div>
+                    <p className="mb-4 text-xs uppercase tracking-[0.18em] text-zinc-400">
+                      Model focus map
+                    </p>
+
+                    {heatmapUrl ? (
+                      <div className="overflow-hidden rounded-[18px] border border-zinc-200 bg-white shadow-[0_12px_30px_rgba(0,0,0,0.04)]">
+                        <img
+                          src={heatmapUrl}
+                          alt="Demo heatmap"
+                          className="h-auto w-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[220px] items-center justify-center rounded-[24px] border border-zinc-200 bg-white px-5 text-center text-sm text-zinc-400">
+                        Focus map unavailable because inference did not run.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-[18px] border border-zinc-200 bg-white p-4 text-sm text-zinc-600">
                     <div className="flex justify-between gap-4 border-b border-zinc-200 py-2">
                       <span>Method</span>
                       <span className="font-medium text-zinc-900">

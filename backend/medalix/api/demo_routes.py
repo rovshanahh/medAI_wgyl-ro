@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 from medalix.api.orchestrator import Orchestrator
 
@@ -100,3 +101,22 @@ def run_demo_case(case_id: str) -> dict:
         "expected": item["expected"],
         "result": result,
     }
+
+
+@router.get("/image/{case_id}")
+def get_demo_image(case_id: str):
+    if case_id not in DEMO_CASES:
+        raise HTTPException(status_code=404, detail=f"Unknown demo case: {case_id}")
+
+    path = Path(DEMO_CASES[case_id]["path"])
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Demo file is missing: {path}")
+
+    if path.suffix.lower() == ".dcm":
+        raise HTTPException(
+            status_code=400,
+            detail="DICOM preview is not available as a browser image.",
+        )
+
+    return FileResponse(path)
