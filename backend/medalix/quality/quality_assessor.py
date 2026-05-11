@@ -5,13 +5,13 @@ import torch.nn.functional as F
 class QualityAssessor:
     def __init__(
         self,
-        blur_threshold: float = 0.0025,
-        severe_blur_threshold: float = 0.001,
-        noise_threshold: float = 0.024,
-        severe_noise_threshold: float = 0.06,
-        min_contrast_std: float = 0.18,
-        severe_min_contrast_std: float = 0.10,
-        min_dynamic_range: float = 0.40,
+        blur_threshold: float = 0.0015,
+        severe_blur_threshold: float = 0.0004,
+        noise_threshold: float = 0.05,
+        severe_noise_threshold: float = 0.12,
+        min_contrast_std: float = 0.08,
+        severe_min_contrast_std: float = 0.04,
+        min_dynamic_range: float = 0.20,
         min_foreground_fraction: float = 0.02,
         max_artifact_score: float = 0.25,
     ) -> None:
