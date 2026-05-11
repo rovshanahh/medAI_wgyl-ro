@@ -605,6 +605,12 @@ class EnsembleModel:
             "secondary_verification_triggered": False,
             "ensemble_member_count": 1,
             "mc_passes": self.mc_passes,
+            "uncertainty_method": "mc_dropout",
+            "deep_ensemble_enabled": False,
+            "uncertainty_note": (
+                "MVP uses single-model MC dropout for uncertainty estimation. "
+                "Full three-member deep ensemble is reserved for a later extension."
+            ),
             "model_id": self._model_id(),
             "model_version": self._version(),
             "model_cache_key": self.model_cache_key,
