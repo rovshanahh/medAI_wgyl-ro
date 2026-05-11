@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
  
 from medalix.api.routes import router
+from medalix.api.demo_routes import router as demo_router
  
 app = FastAPI(title="MedAIx Backend", version="0.1.0")
  
@@ -22,4 +23,5 @@ app.add_middleware(
 app.mount("/heatmaps", StaticFiles(directory="logs/heatmaps"), name="heatmaps")
  
 app.include_router(router)
+app.include_router(demo_router)
  

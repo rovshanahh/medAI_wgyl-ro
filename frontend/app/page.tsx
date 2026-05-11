@@ -10,6 +10,7 @@ import {
   Mail,
   MapPin,
   Phone,
+  Play,
   ShieldPlus,
 } from "lucide-react";
 import Link from "next/link";
@@ -893,6 +894,14 @@ export default function Home() {
             >
               <House size={16} />
               Home
+            </Link>
+
+            <Link
+              href="/demo"
+              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
+            >
+              <Play size={16} />
+              Demo
             </Link>
 
             <Link
