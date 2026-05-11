@@ -1,47 +1,22 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useMemo, useState } from "react";
+import Link from "next/link";
 import {
-  AlertTriangle,
   ArrowRight,
   CircleHelp,
-  House,
+  Download,
+  FileText,
+  Home,
   LayoutDashboard,
   Mail,
-  MapPin,
-  Phone,
   Play,
-  ShieldPlus,
+  RefreshCcw,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react";
-import Link from "next/link";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
-type AppConfig = {
-  supported_uploads?: string[];
-  active_routes?: {
-    route: string;
-    region: string;
-    modality: string;
-    model: string;
-    description: string;
-    status: string;
-  }[];
-  safety_routes?: {
-    route: string;
-    description: string;
-    status: string;
-  }[];
-  inactive_placeholders?: {
-    route: string;
-    region?: string;
-    modality?: string;
-    description?: string;
-    status?: string;
-  }[];
-  max_batch_size?: number;
-  disclaimer?: string;
-};
 
 type AnalysisResponse = {
   analysis_id?: string;
@@ -51,23 +26,16 @@ type AnalysisResponse = {
     confidence?: number;
     message?: string;
     selected_route?: string;
-    route_scores?: Record<string, number>;
     manual_override?: boolean;
+    route_scores?: Record<string, number>;
     top_level_gate?: {
       route_detector?: {
         route_label?: string;
         raw_route_label?: string;
         confidence?: number;
-        margin?: number;
-        supported?: boolean;
-        requires_confirmation?: boolean;
         probabilities?: Record<string, number>;
         reason?: string;
         manual_override?: boolean;
-        override_metadata?: {
-          requested_route?: string;
-          original_route_result?: Record<string, unknown>;
-        };
       };
       conversion?: {
         converted?: boolean;
@@ -80,29 +48,28 @@ type AnalysisResponse = {
   detection?: {
     region?: string | null;
     modality?: string | null;
-    confidence?: number;
     requires_confirmation?: boolean;
-    supported?: boolean;
-    reason?: string;
     manual_override?: boolean;
+  };
+  routing?: {
+    selected_model?: string | null;
+    requires_confirmation?: boolean;
+    method?: string;
+    set_size?: number;
   };
   inference?: {
     top_label?: string;
     top_probability?: number;
-    positive_findings?: string[];
     probabilities?: Record<string, number>;
     reliability_score?: number;
     disagreement_score?: number;
     uncertainty_method?: string;
-    deep_ensemble_enabled?: boolean;
-    uncertainty_note?: string;
     ensemble_member_count?: number;
     mc_passes?: number;
     calibration?: {
       enabled?: boolean;
       method?: string;
       temperature?: number;
-      config_path?: string;
     };
   };
   explainability?: {
@@ -117,33 +84,12 @@ type AnalysisResponse = {
     requires_reupload?: boolean | null;
     blocking?: boolean;
     reason?: string;
-    metrics?: Record<string, number>;
-  };
-  routing?: {
-    accepted_findings_set?: string[];
-    selected_model?: string | null;
-    set_size?: number;
-    requires_confirmation?: boolean;
-    top_probability?: number;
-    routing_candidates?: string[];
-    alpha?: number | null;
-    threshold?: number | null;
-    nonconformity?: number | null;
-    method?: string;
-    reason?: string;
-    routing_candidate_details?: {
-      route: string;
-      probability: number;
-      nonconformity: number;
-    }[];
   };
   ood?: {
     tier?: string;
     score?: number | null;
     reason?: string;
     method?: string;
-    metrics?: Record<string, number | boolean>;
-    is_hard_ood?: boolean;
   };
   policy?: {
     action?: string;
@@ -155,18 +101,6 @@ type AnalysisResponse = {
   disclaimer?: string;
   message?: string;
 };
-
-type RecentReview = {
-  id: string;
-  filename: string;
-  route: string;
-  policy: string;
-  output: string;
-  confidence?: number | null;
-  result: AnalysisResponse;
-};
-
-
 
 type BatchResultItem = {
   index: number;
@@ -184,77 +118,23 @@ type BatchResponse = {
   results: BatchResultItem[];
 };
 
-
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const HEATMAP_BASE_URL = API_BASE_URL;
-
-const FALLBACK_ROUTES = [
-  {
-    route: "abdomen_ct",
-    region: "abdomen",
-    modality: "ct",
-    model: "abdomen_ct_resnet18",
-    description:
-      "Reviews kidney CT images and classifies cyst, normal, stone, or tumor cases.",
-    status: "ACTIVE",
-  },
-  {
-    route: "brain_mri",
-    region: "brain",
-    modality: "mri",
-    model: "brain_mri_resnet18",
-    description:
-      "Reviews brain MRI images and returns the most likely tumor-related class.",
-    status: "ACTIVE",
-  },
-  {
-    route: "bone_xray",
-    region: "bone",
-    modality: "xray",
-    model: "bone_xray_standard",
-    description:
-      "Reviews bone X-ray images and separates normal from abnormal cases.",
-    status: "ACTIVE",
-  },
-  {
-    route: "breast_mammography",
-    region: "breast",
-    modality: "mammography",
-    model: "breast_mammography_resnet18",
-    description:
-      "Reviews mammography images and separates benign from malignant cases.",
-    status: "ACTIVE",
-  },
-  {
-    route: "chest_xray",
-    region: "chest",
-    modality: "xray",
-    model: "chest_xray_mvp",
-    description:
-      "Reviews chest X-ray images and highlights possible visible findings.",
-    status: "ACTIVE",
-  },
-  {
-    route: "retina_fundus",
-    region: "retina",
-    modality: "fundus",
-    model: "retina_fundus_resnet18",
-    description:
-      "Reviews eye fundus images and estimates diabetic retinopathy severity.",
-    status: "ACTIVE",
-  },
-  {
-    route: "skin_dermoscopy",
-    region: "skin",
-    modality: "dermoscopy",
-    model: "skin_dermoscopy_resnet18",
-    description:
-      "Reviews skin dermoscopy images and returns the most likely lesion class.",
-    status: "ACTIVE",
-  },
+const ACTIVE_ROUTES = [
+  "abdomen_ct",
+  "brain_mri",
+  "bone_xray",
+  "breast_mammography",
+  "chest_xray",
+  "retina_fundus",
+  "skin_dermoscopy",
 ];
+
+function formatLabel(value?: string | null) {
+  if (!value) return "—";
+  return value.replaceAll("_", " ");
+}
 
 function formatPercent(value?: number | null) {
   if (value == null) return "—";
@@ -266,151 +146,136 @@ function formatNumber(value?: number | null) {
   return value.toFixed(3);
 }
 
-function formatLabel(value?: string | null) {
-  if (!value) return "—";
-  return value.replaceAll("_", " ");
-}
-
-function getRouteTitle(route?: string | null) {
-  switch (route) {
-    case "abdomen_ct":
-      return "Abdomen CT review";
-    case "brain_mri":
-      return "Brain MRI review";
-    case "bone_xray":
-      return "Bone X-ray review";
-    case "breast_mammography":
-      return "Breast mammography review";
-    case "chest_xray":
-      return "Chest X-ray review";
-    case "retina_fundus":
-      return "Retina fundus review";
-    case "skin_dermoscopy":
-      return "Skin dermoscopy review";
-    case "unknown":
-      return "Unsupported or uncertain input";
-    default:
-      return "Medical image review";
-  }
-}
-
-function getRouteCardTitle(route?: string | null) {
-  return getRouteTitle(route).replace(" review", "");
-}
-
-function getOutputLabel(route?: string | null) {
-  switch (route) {
-    case "abdomen_ct":
-    case "bone_xray":
-    case "breast_mammography":
-      return "Classification output";
-    case "brain_mri":
-      return "Model output";
-    case "chest_xray":
-      return "Primary finding";
-    case "retina_fundus":
-      return "Severity output";
-    case "skin_dermoscopy":
-      return "Lesion class output";
-    default:
-      return "Model output";
-  }
-}
-
-function getPolicyDisplay(action?: string) {
+function getAssistantDecision(action?: string) {
   switch (action) {
     case "ANSWER":
-      return {
-        title: "Answer allowed",
-        description: "The system found enough support to show the model output.",
-      };
+      return "Review output is available.";
     case "ESCALATE":
-      return {
-        title: "Human review recommended",
-        description:
-          "The model produced an output, but confidence, uncertainty, or routing ambiguity suggests expert review.",
-      };
+      return "Human review is recommended.";
     case "REQUEST_EVIDENCE":
-      return {
-        title: "More evidence needed",
-        description:
-          "The uploaded image may not provide enough reliable information for automatic review.",
-      };
+      return "Better image evidence is needed.";
     case "REFUSE":
-      return {
-        title: "Review refused",
-        description:
-          "The system refused to provide an output because safety checks were not satisfied.",
-      };
+      return "Output cannot be provided safely.";
     case "STOP":
-      return {
-        title: "Stopped before inference",
-        description:
-          "The system stopped the request before model inference because the input was unsupported or uncertain.",
-      };
+      return "Review stopped before inference.";
     default:
-      return {
-        title: "Review pending",
-        description: "No final policy decision is available yet.",
-      };
+      return "Ready for image review.";
   }
 }
 
-function getRiskTone(risk?: string) {
-  switch (risk?.toLowerCase()) {
-    case "low":
-      return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
-    case "moderate":
-      return "bg-amber-50 text-amber-700 ring-1 ring-amber-100";
-    case "high":
-      return "bg-red-50 text-red-700 ring-1 ring-red-100";
+function getDecisionColor(action?: string) {
+  switch (action) {
+    case "ANSWER":
+      return "text-emerald-700";
+    case "ESCALATE":
+    case "REQUEST_EVIDENCE":
+      return "text-amber-700";
+    case "STOP":
+    case "REFUSE":
+      return "text-red-700";
     default:
-      return "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200";
+      return "text-slate-950";
   }
 }
 
-function getInputTone(accepted?: boolean) {
-  if (accepted === true) {
-    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+function getAssistantSummary(result: AnalysisResponse | null, selectedRoute: string) {
+  if (!result) return "Choose an image and I’ll walk through the review step by step.";
+
+  const action = result.policy?.action;
+  const output = result.inference?.top_label;
+  const confidence = formatPercent(result.inference?.top_probability);
+  const route = formatLabel(selectedRoute);
+
+  if (action === "ANSWER") {
+    return `I selected the ${route} route and found ${output || "an output"} with ${confidence} confidence. The safety checks allowed the result to be shown for research use.`;
   }
 
-  if (accepted === false) {
-    return "bg-red-50 text-red-700 ring-1 ring-red-100";
+  if (action === "ESCALATE") {
+    return "The model produced an output, but the confidence or uncertainty suggests that a human reviewer should check it.";
   }
 
-  return "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200";
+  if (action === "STOP") {
+    return "I did not run inference because one of the safety checks was not satisfied.";
+  }
+
+  return result.policy?.reason || result.message || "The review is complete.";
 }
 
-function getRouteTone(route?: string | null) {
-  switch (route) {
-    case "abdomen_ct":
-      return "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100";
-    case "brain_mri":
-      return "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100";
-    case "bone_xray":
-      return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
-    case "breast_mammography":
-      return "bg-rose-50 text-rose-700 ring-1 ring-rose-100";
-    case "chest_xray":
-      return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
-    case "retina_fundus":
-      return "bg-violet-50 text-violet-700 ring-1 ring-violet-100";
-    case "skin_dermoscopy":
-      return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
-    case "unknown":
-      return "bg-red-50 text-red-700 ring-1 ring-red-100";
-    default:
-      return "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200";
+function InfoLine({
+  label,
+  value,
+  text,
+}: {
+  label: string;
+  value: string;
+  text: string;
+}) {
+  return (
+    <div className="border-l border-slate-300 pl-4">
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className="mt-2 text-lg font-semibold">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{text}</p>
+    </div>
+  );
+}
+
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read image file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function fetchImageAsDataUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Could not read heatmap image."));
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
   }
 }
 
-export default function Home() {
+
+async function imageUrlToDataUrl(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const blob = await response.blob();
+
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result));
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function guessImageFormat(dataUrl: string) {
+  if (dataUrl.startsWith("data:image/png")) return "PNG";
+  if (dataUrl.startsWith("data:image/jpeg") || dataUrl.startsWith("data:image/jpg")) return "JPEG";
+  return "PNG";
+}
+
+export default function ReviewPage() {
   const [file, setFile] = useState<File | null>(null);
   const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [batchResult, setBatchResult] = useState<BatchResponse | null>(null);
-  const [recentReviews, setRecentReviews] = useState<RecentReview[]>([]);
-  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [confirmedRoute, setConfirmedRoute] = useState("");
   const [loading, setLoading] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
@@ -424,56 +289,19 @@ export default function Home() {
     return URL.createObjectURL(file);
   }, [file]);
 
-  useEffect(() => {
-    return () => {
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
-
-  useEffect(() => {
-    const loadConfig = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/config`);
-        if (!response.ok) return;
-
-        const data = await response.json();
-        setAppConfig(data);
-      } catch {
-        setAppConfig(null);
-      }
-    };
-
-    loadConfig();
-  }, []);
+  const routeDetector = result?.input_gate?.top_level_gate?.route_detector;
+  const selectedRoute =
+    result?.input_gate?.selected_route || routeDetector?.route_label || "—";
+  const inferenceRan = Boolean(result?.inference?.top_label);
 
   const heatmapUrl = useMemo(() => {
     const rawPath = result?.explainability?.heatmap_path;
-
     if (!rawPath) return "";
-
     if (rawPath.startsWith("http://") || rawPath.startsWith("https://")) {
-      return rawPath;
+      return `${rawPath}?v=${result?.analysis_id || Date.now()}`;
     }
-
-    return `${HEATMAP_BASE_URL}${rawPath}`;
+    return `${API_BASE_URL}${rawPath}?v=${result?.analysis_id || Date.now()}`;
   }, [result]);
-
-  const activeRoutes = appConfig?.active_routes?.length
-    ? appConfig.active_routes
-    : FALLBACK_ROUTES;
-
-  const supportedUploads = appConfig?.supported_uploads?.length
-    ? appConfig.supported_uploads.join(", ").replaceAll(".", "").toUpperCase()
-    : "PNG, JPG, TIFF, DICOM";
-
-  const routeDetector = result?.input_gate?.top_level_gate?.route_detector;
-  const conversion = result?.input_gate?.top_level_gate?.conversion;
-  const selectedRoute =
-    result?.input_gate?.selected_route || routeDetector?.route_label;
-  const routeProbabilities =
-    routeDetector?.probabilities || result?.input_gate?.route_scores || {};
-  const inferenceRan = Boolean(result?.inference?.top_label);
-  const policyDisplay = getPolicyDisplay(result?.policy?.action);
 
   const manualOverrideUsed =
     Boolean(result?.input_gate?.manual_override) ||
@@ -489,62 +317,83 @@ export default function Home() {
       result?.detection?.requires_confirmation === true ||
       result?.input_gate?.accepted_for_analysis === false);
 
-  const warnings = [
-    ...(result?.policy?.warnings ?? []),
-    ...(result?.quality?.warnings ?? []),
-    ...(result?.warnings ?? []),
-    ...(result?.explainability?.warning ? [result.explainability.warning] : []),
-  ].filter(Boolean);
-
-  const addRecentReview = (data: AnalysisResponse, sourceFile: File) => {
-    const route =
-      data?.input_gate?.selected_route ||
-      data?.input_gate?.top_level_gate?.route_detector?.route_label ||
-      "unknown";
-
-    const review: RecentReview = {
-      id: `${Date.now()}-${sourceFile.name}`,
-      filename: sourceFile.name,
-      route,
-      policy: data?.policy?.action || "—",
-      output: data?.inference?.top_label || "No inference",
-      confidence: data?.inference?.top_probability,
-      result: data,
-    };
-
-    setRecentReviews((previous) => [review, ...previous].slice(0, 5));
-  };
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0] ?? null;
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0] ?? null;
     setFile(selected);
     setResult(null);
     setConfirmedRoute("");
     setError("");
   };
 
-  const handleAnalyze = async () => {
+  const handleBatchFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.target.files ?? []);
+    setBatchFiles(selected);
+    setBatchResult(null);
+    setError("");
+  };
+
+  const handleAnalyzeBatch = async () => {
+    if (!batchFiles.length) {
+      setError("Please choose at least one image for batch review.");
+      return;
+    }
+
+    try {
+      setBatchLoading(true);
+      setError("");
+      setBatchResult(null);
+
+      const formData = new FormData();
+      batchFiles.forEach((selectedFile) => {
+        formData.append("files", selectedFile);
+      });
+
+      const response = await fetch(`${API_BASE_URL}/analyze/batch`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const text = await response.text();
+      let data: BatchResponse & { detail?: string };
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || "Batch request failed.");
+      }
+
+      if (!response.ok) throw new Error(data?.detail || "Batch request failed.");
+
+      setBatchResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const runAnalyze = async (routeOverride?: string) => {
     if (!file) {
       setError("Please choose an image first.");
       return;
     }
 
     try {
-      setLoading(true);
+      routeOverride ? setOverrideLoading(true) : setLoading(true);
       setError("");
-      setResult(null);
-      setConfirmedRoute("");
 
       const formData = new FormData();
       formData.append("file", file);
+      if (routeOverride) formData.append("route_override", routeOverride);
 
-      const response = await fetch(`${API_BASE_URL}/analyze`, {
+      const endpoint = routeOverride ? "/analyze/override" : "/analyze";
+
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         body: formData,
       });
 
       const text = await response.text();
-
       let data: AnalysisResponse & { detail?: string };
 
       try {
@@ -553,71 +402,30 @@ export default function Home() {
         throw new Error(text || "Request failed.");
       }
 
-      if (!response.ok) {
-        throw new Error(data?.detail || "Request failed.");
-      }
+      if (!response.ok) throw new Error(data?.detail || "Request failed.");
 
       setResult(data);
-      addRecentReview(data, file);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRunWithConfirmedRoute = async () => {
-    if (!file) {
-      setError("Please choose an image first.");
-      return;
-    }
-
-    if (!confirmedRoute) {
-      setError("Please select a confirmed route first.");
-      return;
-    }
-
-    try {
-      setOverrideLoading(true);
-      setError("");
-
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("route_override", confirmedRoute);
-
-      const response = await fetch(`${API_BASE_URL}/analyze/override`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const text = await response.text();
-
-      let data: AnalysisResponse & { detail?: string };
-
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(text || "Override request failed.");
-      }
-
-      if (!response.ok) {
-        throw new Error(data?.detail || "Override request failed.");
-      }
-
-      setResult(data);
-      addRecentReview(data, file);
       setConfirmedRoute("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
+      setLoading(false);
       setOverrideLoading(false);
     }
   };
 
+  const handleReset = () => {
+    setFile(null);
+    setBatchFiles([]);
+    setBatchResult(null);
+    setResult(null);
+    setConfirmedRoute("");
+    setError("");
+  };
 
-  const handleDownloadReport = () => {
+  const handleDownloadJson = () => {
     if (!result) {
-      setError("No review result available to download.");
+      setError("No review result available.");
       return;
     }
 
@@ -637,7 +445,10 @@ export default function Home() {
     const link = document.createElement("a");
 
     link.href = url;
-    link.download = `governed_medical_image_analysis_report_${result.analysis_id || "review"}.json`;
+    link.download = `governed_medical_image_analysis_report_${
+      result.analysis_id || "review"
+    }.json`;
+
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -645,85 +456,115 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
-
-  const handleDownloadPdfReport = () => {
+  const handleDownloadPdf = async () => {
     if (!result) {
-      setError("No review result available to download.");
+      setError("No review result available.");
       return;
     }
 
     const doc = new jsPDF();
     const generatedAt = new Date().toLocaleString();
+    const fileName = result.filename || file?.name || "—";
 
-    const selectedRouteForReport =
-      result.input_gate?.selected_route ||
-      result.input_gate?.top_level_gate?.route_detector?.route_label ||
-      "—";
+    const addFooter = () => {
+      const pageCount = doc.getNumberOfPages();
 
-    const modelOutput = result.inference?.top_label || "No inference";
-    const confidence = formatPercent(result.inference?.top_probability);
-    const policyAction = result.policy?.action || "—";
-    const riskLevel = result.policy?.risk_category || "—";
-    const routeConfidence = formatPercent(result.input_gate?.confidence);
-    const heatmapPath = result.explainability?.heatmap_path || "Unavailable";
-    const manualOverride =
-      result.input_gate?.manual_override ||
-      result.detection?.manual_override ||
-      result.input_gate?.top_level_gate?.route_detector?.manual_override
-        ? "Yes"
-        : "No";
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(120);
+        doc.text(
+          "Research-use only. Non-diagnostic output. Not for clinical decision-making.",
+          14,
+          286
+        );
+        doc.text(`Page ${i} of ${pageCount}`, 180, 286);
+      }
+    };
 
+    doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.text("Governed Medical Image Analysis Report", 14, 18);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    doc.text("Research-use only. Non-diagnostic output.", 14, 26);
-    doc.text(`Generated: ${generatedAt}`, 14, 32);
+    doc.setTextColor(80);
+    doc.text(`Generated: ${generatedAt}`, 14, 26);
+    doc.text(`File: ${fileName}`, 14, 32);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Summary", 14, 45);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(70);
+    doc.text(
+      doc.splitTextToSize(getAssistantSummary(result, selectedRoute), 180),
+      14,
+      52
+    );
 
     autoTable(doc, {
-      startY: 42,
+      startY: 68,
       head: [["Field", "Value"]],
       body: [
         ["Analysis ID", result.analysis_id || "—"],
-        ["File name", result.filename || file?.name || "—"],
-        ["Selected route", formatLabel(selectedRouteForReport)],
-        ["Detected region", result.detection?.region || "—"],
-        ["Detected modality", result.detection?.modality || "—"],
+        ["Policy action", result.policy?.action || "—"],
+        ["Policy reason", result.policy?.reason || "—"],
+        ["Risk category", result.policy?.risk_category || "—"],
+        ["Selected route", formatLabel(selectedRoute)],
+        ["Route confidence", formatPercent(result.input_gate?.confidence)],
+        ["Raw route", formatLabel(routeDetector?.raw_route_label)],
+        ["Accepted for analysis", result.input_gate?.accepted_for_analysis ? "Yes" : "No"],
+        ["Manual override used", manualOverrideUsed ? "Yes" : "No"],
+        ["Region / Modality", `${result.detection?.region || "—"} / ${result.detection?.modality || "—"}`],
         ["Selected model", result.routing?.selected_model || "—"],
-        ["Policy action", policyAction],
-        ["Risk level", riskLevel],
-        ["Model output", modelOutput],
-        ["Output confidence", confidence],
-        ["Input confidence", routeConfidence],
-        ["Uncertainty method", result.inference?.uncertainty_method || "—"],
-        ["Deep ensemble enabled", result.inference?.deep_ensemble_enabled ? "Yes" : "No"],
-        ["MC dropout passes", String(result.inference?.mc_passes ?? "—")],
-        ["Ensemble members", String(result.inference?.ensemble_member_count ?? "—")],
-        ["Calibration method", result.inference?.calibration?.method || "—"],
-        ["Temperature", String(result.inference?.calibration?.temperature ?? "—")],
-        ["Manual override used", manualOverride],
+        ["Model output", result.inference?.top_label || "No inference"],
+        ["Output confidence", formatPercent(result.inference?.top_probability)],
         ["Quality status", result.quality?.status || "—"],
-        ["Quality note", result.quality?.reason || "—"],
-        ["OOD status", result.ood?.tier || "—"],
+        ["Quality reason", result.quality?.reason || "—"],
+        ["Re-upload suggested", result.quality?.requires_reupload ? "Yes" : "No"],
+        ["OOD tier", result.ood?.tier || "—"],
+        ["OOD score", formatNumber(result.ood?.score)],
         ["OOD method", result.ood?.method || "—"],
-        ["Explanation method", result.explainability?.method || "—"],
+        ["Uncertainty method", formatLabel(result.inference?.uncertainty_method)],
+        ["MC dropout passes", String(result.inference?.mc_passes ?? "—")],
+        ["Reliability score", formatNumber(result.inference?.reliability_score)],
+        ["Disagreement score", formatNumber(result.inference?.disagreement_score)],
+        ["Calibration", result.inference?.calibration?.enabled ? "Enabled" : "Not applied"],
+        ["Temperature", String(result.inference?.calibration?.temperature ?? "—")],
+        ["Explainability method", result.explainability?.method || "—"],
         ["Explanation target", result.explainability?.target_label || result.inference?.top_label || "—"],
-        ["Heatmap path", heatmapPath],
+        ["Heatmap path", result.explainability?.heatmap_path || "Unavailable"],
       ],
-      styles: {
-        fontSize: 9,
-        cellPadding: 3,
-      },
-      headStyles: {
-        fillColor: [239, 68, 68],
-      },
+      styles: { fontSize: 8.5, cellPadding: 3, valign: "top" },
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] },
       columnStyles: {
-        0: { fontStyle: "bold", cellWidth: 55 },
-        1: { cellWidth: 125 },
+        0: { fontStyle: "bold", cellWidth: 52 },
+        1: { cellWidth: 128 },
       },
     });
+
+    const routeRows = routeDetector?.probabilities
+      ? Object.entries(routeDetector.probabilities).map(([label, probability]) => [
+          formatLabel(label),
+          formatPercent(probability),
+        ])
+      : [];
+
+    if (routeRows.length) {
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        head: [["Route probability", "Value"]],
+        body: routeRows,
+        styles: { fontSize: 8.5, cellPadding: 3 },
+        headStyles: { fillColor: [80, 80, 90] },
+      });
+    }
 
     const probabilityRows = result.inference?.probabilities
       ? Object.entries(result.inference.probabilities).map(([label, probability]) => [
@@ -732,336 +573,212 @@ export default function Home() {
         ])
       : [];
 
-    if (probabilityRows.length > 0) {
+    if (probabilityRows.length) {
       autoTable(doc, {
         startY: (doc as any).lastAutoTable.finalY + 10,
-        head: [["Model Probability", "Value"]],
+        head: [["Model probability", "Value"]],
         body: probabilityRows,
-        styles: {
-          fontSize: 9,
-          cellPadding: 3,
-        },
-        headStyles: {
-          fillColor: [39, 39, 42],
-        },
-        columnStyles: {
-          0: { fontStyle: "bold", cellWidth: 90 },
-          1: { cellWidth: 90 },
-        },
+        styles: { fontSize: 8.5, cellPadding: 3 },
+        headStyles: { fillColor: [80, 80, 90] },
       });
     }
 
-    const warningRows = warnings.length
-      ? warnings.map((warning) => [warning])
-      : [["No warnings reported."]];
+    const warnings = [
+      ...(result.policy?.warnings ?? []),
+      ...(result.quality?.warnings ?? []),
+      ...(result.warnings ?? []),
+      ...(result.explainability?.warning ? [result.explainability.warning] : []),
+    ];
 
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 10,
-      head: [["Warnings / Review Notes"]],
-      body: warningRows,
-      styles: {
-        fontSize: 9,
-        cellPadding: 3,
-      },
-      headStyles: {
-        fillColor: [245, 158, 11],
-      },
+      head: [["Warnings / Notes"]],
+      body: warnings.length ? warnings.map((item) => [item]) : [["No warnings reported."]],
+      styles: { fontSize: 8.5, cellPadding: 3 },
+      headStyles: { fillColor: [185, 28, 28] },
     });
 
-    const finalY = (doc as any).lastAutoTable.finalY + 12;
+    doc.addPage();
 
+    doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("Important notice", 14, finalY);
+    doc.setFontSize(14);
+    doc.text("Visual Evidence", 14, 18);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    const disclaimer =
-      result.disclaimer ||
-      appConfig?.disclaimer ||
-      "This platform is intended solely for research and educational use. Outputs are non-diagnostic and must not be used for clinical decision-making.";
+    doc.setTextColor(80);
+    doc.text(
+      "Original uploaded image and generated model focus map, when available.",
+      14,
+      26
+    );
 
-    const disclaimerLines = doc.splitTextToSize(disclaimer, 180);
-    doc.text(disclaimerLines, 14, finalY + 6);
+    const inputImage = previewUrl && !isDicomFile ? await imageUrlToDataUrl(previewUrl) : null;
+    const heatmapImage = heatmapUrl ? await imageUrlToDataUrl(heatmapUrl) : null;
 
-    doc.save(`governed_medical_image_analysis_report_${result.analysis_id || "review"}.pdf`);
-  };
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Original image", 14, 40);
 
-
-  const handleBatchFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files ?? []);
-    setBatchFiles(selected);
-    setBatchResult(null);
-    setError("");
-  };
-
-  const handleAnalyzeBatch = async () => {
-    if (!batchFiles.length) {
-      setError("Please choose at least one image for batch review.");
-      return;
+    if (inputImage) {
+      doc.addImage(inputImage, guessImageFormat(inputImage), 14, 46, 82, 82);
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text("Original image preview unavailable.", 14, 52);
     }
 
-    try {
-      setBatchLoading(true);
-      setError("");
-      setBatchResult(null);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Model focus map", 112, 40);
 
-      const formData = new FormData();
-
-      batchFiles.forEach((selectedFile) => {
-        formData.append("files", selectedFile);
-      });
-
-      const response = await fetch(`${API_BASE_URL}/analyze/batch`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const text = await response.text();
-
-      let data: BatchResponse & { detail?: string };
-
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(text || "Batch request failed.");
-      }
-
-      if (!response.ok) {
-        throw new Error(data?.detail || "Batch request failed.");
-      }
-
-      setBatchResult(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
-    } finally {
-      setBatchLoading(false);
-    }
-  };
-
-  const handleDownloadBatchJson = () => {
-    if (!batchResult) {
-      setError("No batch result available to download.");
-      return;
+    if (heatmapImage) {
+      doc.addImage(heatmapImage, guessImageFormat(heatmapImage), 112, 46, 82, 82);
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text("Focus map unavailable.", 112, 52);
     }
 
-    const report = {
-      generated_at: new Date().toISOString(),
-      project: "Governed Medical Image Analysis",
-      notice:
-        "Research-use only. Outputs are non-diagnostic and must not be used for clinical decision-making.",
-      batch: batchResult,
-    };
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Technical interpretation", 14, 148);
 
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
-      type: "application/json",
+    autoTable(doc, {
+      startY: 156,
+      head: [["Check", "Meaning"]],
+      body: [
+        [
+          "Policy decision",
+          "The final governance decision controlling whether the system can answer, escalate, request evidence, refuse, or stop.",
+        ],
+        [
+          "Route detection",
+          "The predicted image type used to select the specialist model before inference.",
+        ],
+        [
+          "Quality check",
+          "A usability check for blur, contrast, readability, artifacts, and whether re-upload is needed.",
+        ],
+        [
+          "OOD screening",
+          "Checks whether the input appears too far from expected medical-image patterns.",
+        ],
+        [
+          "Uncertainty",
+          "Repeated stochastic passes estimate how stable or unstable the prediction is.",
+        ],
+        [
+          "Calibration",
+          "Temperature scaling helps reduce overconfident probability values.",
+        ],
+      ],
+      styles: { fontSize: 8.5, cellPadding: 3, valign: "top" },
+      headStyles: { fillColor: [15, 23, 42] },
+      columnStyles: {
+        0: { fontStyle: "bold", cellWidth: 45 },
+        1: { cellWidth: 135 },
+      },
     });
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    addFooter();
 
-    link.href = url;
-    link.download = `governed_medical_image_analysis_batch_report_${Date.now()}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
-  };
-
-  const handleReset = () => {
-    setFile(null);
-    setBatchFiles([]);
-    setResult(null);
-    setBatchResult(null);
-    setConfirmedRoute("");
-    setError("");
+    doc.save(
+      `governed_medical_image_analysis_report_${result.analysis_id || "review"}.pdf`
+    );
   };
 
   return (
     <main
-      className="min-h-screen bg-[#FBF8F3] text-zinc-900"
+      className="relative min-h-screen overflow-hidden bg-[#fffaf3] text-slate-950"
       style={{ fontFamily: '"Aptos","Aptos Body","Segoe UI",Arial,sans-serif' }}
     >
-      <div className="mx-auto max-w-7xl px-6 py-6">
-        <nav className="mb-10 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-[0_8px_24px_rgba(0,0,0,0.04)] ring-1 ring-black/5">
-              <div className="relative h-4 w-7">
-                <span className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500" />
-                <span className="absolute right-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500" />
-                <span className="absolute left-1/2 top-1/2 h-[2px] w-4 -translate-x-1/2 -translate-y-1/2 bg-red-400" />
-              </div>
-            </div>
+      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-pink-300/35 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-10 left-8 h-80 w-80 rounded-full bg-sky-300/35 blur-3xl" />
 
+      <div className="relative mx-auto max-w-7xl px-6 py-6">
+        <header className="flex items-center justify-between border-b border-slate-300 pb-5">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="relative h-10 w-14">
+              <span className="absolute left-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-slate-950" />
+              <span className="absolute right-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-slate-950" />
+              <span className="absolute left-1/2 top-1/2 h-[2px] w-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-400" />
+            </div>
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-400">
-                Research-use assistant
+              <p className="text-[11px] uppercase tracking-[0.25em] text-slate-500">
+                Gentle research-use review
               </p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+              <h1 className="text-xl font-semibold">
                 Governed Medical Image Analysis
               </h1>
             </div>
-          </div>
+          </Link>
 
-          <div className="flex flex-wrap items-center gap-5 text-sm text-zinc-600">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
-              <House size={16} />
+          <nav className="flex flex-wrap items-center gap-5 text-sm text-slate-600">
+            <Link href="/" className="inline-flex items-center gap-2 transition hover:text-red-500">
+              <Home size={16} />
               Home
             </Link>
-
-            <Link
-              href="/demo"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/demo" className="inline-flex items-center gap-2 transition hover:text-red-500">
               <Play size={16} />
               Demo
             </Link>
-
-            <Link
-              href="/workspace"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/workspace" className="inline-flex items-center gap-2 transition hover:text-red-500">
               <LayoutDashboard size={16} />
               Workspace
             </Link>
-
-            <Link
-              href="/about"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/about" className="inline-flex items-center gap-2 transition hover:text-red-500">
               <CircleHelp size={16} />
               About
             </Link>
-
-            <Link
-              href="/contact"
-              className="inline-flex items-center gap-2 transition hover:text-zinc-900"
-            >
+            <Link href="/contact" className="inline-flex items-center gap-2 transition hover:text-red-500">
               <Mail size={16} />
               Contact
             </Link>
-          </div>
-        </nav>
+          </nav>
+        </header>
 
-        <section className="mb-14">
-          <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs text-zinc-600 shadow-[0_6px_20px_rgba(0,0,0,0.03)]">
-              <ShieldPlus size={15} className="text-red-500" />
-              Research-use image review assistant
-            </div>
-
-            <h2 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
-              A careful assistant for reviewing medical images.
-            </h2>
-
-            <p className="mt-5 max-w-2xl text-base leading-8 text-zinc-600">
-              Upload a supported medical image to receive a structured summary,
-              visual explanation, and a carefully framed next-step recommendation
-              for research use.
-            </p>
-
-            <div className="mt-10 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-              {activeRoutes.map((routeInfo) => (
-                <div
-                  key={routeInfo.route}
-                  className="group relative overflow-hidden rounded-[24px] border border-zinc-200/80 bg-white px-5 py-4 shadow-[0_12px_30px_rgba(0,0,0,0.04)] transition hover:-translate-y-0.5 hover:border-red-100 hover:shadow-[0_18px_42px_rgba(239,68,68,0.09)]"
-                >
-                  <div className="absolute -right-14 -top-16 h-32 w-32 rounded-full bg-red-50/70 blur-md transition group-hover:scale-125" />
-                  <div className="absolute -bottom-16 -left-16 h-32 w-32 rounded-full bg-zinc-50 blur-md" />
-
-                  <div className="relative flex items-center justify-between gap-6">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold tracking-tight text-zinc-900">
-                        {getRouteCardTitle(routeInfo.route)}
-                      </p>
-
-                      <p className="mt-2 text-xs leading-5 text-zinc-500">
-                        {routeInfo.description}
-                      </p>
-                    </div>
-
-                    <div className="hidden shrink-0 text-right sm:block">
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">
-                        Route
-                      </p>
-                      <p className="mt-1 text-xs font-medium text-zinc-700">
-                        {formatLabel(routeInfo.route)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="relative mt-4 h-px w-full bg-zinc-100">
-                    <div className="h-px w-16 bg-gradient-to-r from-red-200 via-red-300 to-transparent transition-all group-hover:w-28" />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleAnalyze}
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-5 py-3 text-sm font-medium text-white shadow-[0_12px_28px_rgba(239,68,68,0.22)] transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? "Reviewing..." : "Start review"}
-                <ArrowRight size={16} />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleReset}
-                className="rounded-xl bg-white px-5 py-3 text-sm text-zinc-700 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
-              >
-                Reset
-              </button>
-
-              {result ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleDownloadReport}
-                    className="rounded-xl bg-white px-5 py-3 text-sm text-zinc-700 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
-                  >
-                    Download JSON
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDownloadPdfReport}
-                    className="rounded-xl bg-white px-5 py-3 text-sm text-zinc-700 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
-                  >
-                    Download PDF
-                  </button>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </section>
-
-        <section
-          id="workspace"
-          className="grid gap-12 xl:grid-cols-[300px_minmax(0,1fr)]"
-        >
+        <section className="grid gap-10 py-8 lg:grid-cols-[320px_minmax(0,1fr)]">
           <aside>
-            <h3 className="mb-4 text-base font-medium">Upload image</h3>
+            <label className="group block cursor-pointer border-y border-slate-300 py-6 transition hover:border-red-400">
+              <div className="flex items-start justify-between gap-5">
+                <div className="min-w-0">
+                  <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-red-500">
+                    <ShieldCheck size={13} />
+                    Safe upload
+                  </div>
 
-            <label className="flex min-h-[210px] cursor-pointer flex-col items-center justify-center rounded-[24px] border border-dashed border-zinc-300 bg-white p-6 text-center transition hover:border-red-300 hover:bg-red-50/20">
-              <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 ring-1 ring-red-100">
-                <div className="h-5 w-5 rounded-full bg-red-500" />
+                  <p className="text-lg font-semibold tracking-tight text-slate-950">
+                    {file ? "Selected image" : "Choose an image"}
+                  </p>
+
+                  <p className="mt-2 max-w-[270px] text-sm leading-6 text-slate-500">
+                    {file
+                      ? "Ready for review. I’ll check whether it is safe before showing a result."
+                      : "Select a scan and I’ll check whether it is safe to review before showing a result."}
+                  </p>
+
+                  {file ? (
+                    <p className="mt-3 max-w-[270px] truncate text-xs text-slate-400">
+                      File: {file.name}
+                    </p>
+                  ) : null}
+
+                  <p className="mt-4 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                    PNG · JPG · TIFF · DICOM
+                  </p>
+                </div>
+
+                <span className="mt-1 text-sm font-semibold text-slate-500 transition group-hover:text-red-500">
+                  Browse
+                </span>
               </div>
-
-              <span className="text-sm text-zinc-700">
-                Select a medical image to begin review
-              </span>
-
-              <span className="mt-2 text-xs text-zinc-500">
-                Supported: {supportedUploads}
-              </span>
 
               <input
                 type="file"
@@ -1071,64 +788,46 @@ export default function Home() {
               />
             </label>
 
-            <div className="mt-4 text-sm text-zinc-600">
-              <div className="flex items-center justify-between border-b border-zinc-200 py-3">
-                <span>File</span>
-                <span className="max-w-[150px] truncate text-right text-zinc-800">
-                  {file?.name || "No file selected"}
-                </span>
-              </div>
+            <div className="mt-5 grid gap-3">
+              <button
+                type="button"
+                onClick={() => runAnalyze()}
+                disabled={loading}
+                className="group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white disabled:opacity-60"
+              >
+                <span>{loading ? "Reviewing carefully..." : "Start guided review"}</span>
+                <ArrowRight size={17} className="transition group-hover:translate-x-1" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleReset}
+                className="group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white"
+              >
+                <span>Clear and start over</span>
+                <RefreshCcw size={17} className="transition group-hover:rotate-[-20deg]" />
+              </button>
             </div>
 
-            {previewUrl && !isDicomFile ? (
-              <div className="mt-4 overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
-                <img
-                  src={previewUrl}
-                  alt="Preview"
-                  className="h-auto w-full object-cover"
-                />
-              </div>
-            ) : isDicomFile ? (
-              <div className="mt-4 flex h-64 flex-col items-center justify-center rounded-[24px] border border-zinc-200 bg-white px-6 text-center text-sm text-zinc-500">
-                <p className="font-medium text-zinc-700">DICOM file selected</p>
-                <p className="mt-2">
-                  Browser preview is unavailable for .dcm files. The backend will
-                  convert it for analysis.
+            {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
+
+            <div className="mt-8 border-t border-slate-300 pt-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Sparkles size={15} className="text-red-500" />
+                <p className="text-sm font-semibold text-slate-950">
+                  Batch review
                 </p>
               </div>
-            ) : (
-              <div className="mt-4 flex h-64 items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-sm text-zinc-400">
-                Image preview
-              </div>
-            )}
 
-
-            <div className="mt-6 rounded-[24px] border border-zinc-200 bg-white p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-medium text-zinc-900">
-                    Batch review
-                  </h3>
-                  <p className="mt-2 text-xs leading-5 text-zinc-500">
-                    Upload multiple images and run them through the governed
-                    pipeline in one request.
-                  </p>
-                </div>
-
-                <span className="rounded-md bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-600">
-                  Max {appConfig?.max_batch_size ?? 25}
-                </span>
-              </div>
-
-              <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-[18px] border border-dashed border-zinc-300 bg-zinc-50 px-4 py-5 text-center transition hover:border-red-300 hover:bg-red-50/20">
-                <span className="text-sm text-zinc-700">
-                  Select multiple images
-                </span>
-                <span className="mt-1 text-xs text-zinc-500">
+              <label className="block cursor-pointer border-y border-slate-200 py-4 transition hover:border-red-400">
+                <p className="text-sm font-semibold">
                   {batchFiles.length
-                    ? `${batchFiles.length} file(s) selected`
-                    : "No batch files selected"}
-                </span>
+                    ? `${batchFiles.length} image(s) selected`
+                    : "Choose multiple images"}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Run several images through the same governed pipeline.
+                </p>
 
                 <input
                   type="file"
@@ -1139,61 +838,41 @@ export default function Home() {
                 />
               </label>
 
-              {batchFiles.length > 0 ? (
-                <div className="mt-3 max-h-28 space-y-1 overflow-y-auto text-xs text-zinc-500">
-                  {batchFiles.map((item) => (
-                    <div key={`${item.name}-${item.size}`} className="truncate">
-                      {item.name}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
               <button
                 type="button"
                 onClick={handleAnalyzeBatch}
                 disabled={batchLoading}
-                className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-4 group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white disabled:opacity-60"
               >
-                {batchLoading ? "Running batch..." : "Run batch review"}
+                <span>{batchLoading ? "Running batch..." : "Run batch review"}</span>
+                <ArrowRight size={17} className="transition group-hover:translate-x-1" />
               </button>
 
               {batchResult ? (
-                <div className="mt-5">
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                    <div className="rounded-xl bg-zinc-50 px-2 py-2">
-                      <p className="font-semibold text-zinc-900">
-                        {batchResult.batch_size}
-                      </p>
-                      <p className="text-zinc-500">Total</p>
+                <div className="mt-5 space-y-3 text-sm">
+                  <div className="grid grid-cols-3 gap-3 border-y border-slate-200 py-3 text-center">
+                    <div>
+                      <p className="font-semibold text-slate-950">{batchResult.batch_size}</p>
+                      <p className="text-xs text-slate-500">Total</p>
                     </div>
-                    <div className="rounded-xl bg-emerald-50 px-2 py-2">
-                      <p className="font-semibold text-emerald-700">
-                        {batchResult.completed}
-                      </p>
-                      <p className="text-emerald-700">Done</p>
+                    <div>
+                      <p className="font-semibold text-emerald-700">{batchResult.completed}</p>
+                      <p className="text-xs text-slate-500">Done</p>
                     </div>
-                    <div className="rounded-xl bg-red-50 px-2 py-2">
-                      <p className="font-semibold text-red-700">
-                        {batchResult.failed}
-                      </p>
-                      <p className="text-red-700">Failed</p>
+                    <div>
+                      <p className="font-semibold text-red-700">{batchResult.failed}</p>
+                      <p className="text-xs text-slate-500">Failed</p>
                     </div>
                   </div>
 
-                  <div className="mt-4 max-h-72 divide-y divide-zinc-200 overflow-y-auto border-y border-zinc-200">
+                  <div className="max-h-48 divide-y divide-slate-200 overflow-y-auto border-b border-slate-200">
                     {batchResult.results.map((item) => {
                       const itemRoute =
                         item.result?.input_gate?.selected_route ||
-                        item.result?.input_gate?.top_level_gate?.route_detector
-                          ?.route_label ||
+                        item.result?.input_gate?.top_level_gate?.route_detector?.route_label ||
                         "—";
-
+                      const itemOutput = item.result?.inference?.top_label || "No inference";
                       const itemPolicy = item.result?.policy?.action || "—";
-                      const itemOutput =
-                        item.result?.inference?.top_label || "No inference";
-                      const itemConfidence =
-                        item.result?.inference?.top_probability;
 
                       return (
                         <button
@@ -1201,953 +880,608 @@ export default function Home() {
                           key={`${item.index}-${item.filename}`}
                           onClick={() => {
                             if (item.result) {
+                              const matchedFile = batchFiles.find(
+                                (selectedFile) => selectedFile.name === item.filename
+                              );
+                              if (matchedFile) setFile(matchedFile);
                               setResult(item.result);
-                              setConfirmedRoute("");
                             }
                           }}
-                          className="w-full py-3 text-left text-xs transition hover:bg-zinc-50"
+                          className="w-full py-3 text-left transition hover:text-red-500"
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="max-w-[150px] truncate font-medium text-zinc-900">
-                              {item.filename}
-                            </span>
-                            <span
-                              className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium ${getRouteTone(
-                                itemRoute
-                              )}`}
-                            >
-                              {formatLabel(itemRoute)}
-                            </span>
-                          </div>
-
-                          <div className="mt-2 grid grid-cols-3 gap-2 text-zinc-500">
-                            <span>{itemPolicy}</span>
-                            <span className="truncate">{itemOutput}</span>
-                            <span>{formatPercent(itemConfidence)}</span>
-                          </div>
-
-                          {item.status === "failed" ? (
-                            <p className="mt-2 text-red-600">
-                              {item.error || "Failed"}
-                            </p>
-                          ) : null}
+                          <p className="truncate font-medium">{item.filename}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatLabel(itemRoute)} · {itemOutput} · {itemPolicy}
+                          </p>
                         </button>
                       );
                     })}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={handleDownloadBatchJson}
-                    className="mt-4 w-full rounded-xl bg-white px-4 py-2 text-sm text-zinc-700 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
-                  >
-                    Download batch JSON
-                  </button>
                 </div>
               ) : null}
             </div>
 
+
             {needsManualConfirmation ? (
-              <div className="mt-5 rounded-[20px] border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm font-semibold text-amber-900">
-                  Manual route confirmation
-                </p>
+              <div className="mt-7 border-t border-red-200 pt-5">
+                <div className="mb-4 flex items-start gap-3">
+                  <div className="relative mt-1 h-6 w-10 shrink-0">
+                    <span className="absolute left-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-slate-950" />
+                    <span className="absolute right-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-slate-950" />
+                    <span className="absolute left-1/2 top-1/2 h-[2px] w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-400" />
+                  </div>
 
-                <p className="mt-2 text-xs leading-5 text-amber-800">
-                  The system did not safely continue with automatic routing.
-                  Select the correct route only if a human evaluator knows the
-                  intended image type.
-                </p>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">
+                      Confirm the image route
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">
+                      Use only when a human evaluator knows the intended image type.
+                    </p>
+                  </div>
+                </div>
 
-                <select
-                  value={confirmedRoute}
-                  onChange={(event) => setConfirmedRoute(event.target.value)}
-                  className="mt-4 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none transition focus:border-amber-400"
-                >
-                  <option value="">Select confirmed route</option>
-                  {activeRoutes.map((routeInfo) => (
-                    <option key={routeInfo.route} value={routeInfo.route}>
-                      {formatLabel(routeInfo.route)}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-col gap-3">
+                  <select
+                    value={confirmedRoute}
+                    onChange={(event) => setConfirmedRoute(event.target.value)}
+                    className="border-0 border-b border-slate-300 bg-transparent px-0 py-3 text-sm text-slate-800 outline-none transition focus:border-red-400"
+                  >
+                    <option value="">Select confirmed route</option>
+                    {ACTIVE_ROUTES.map((route) => (
+                      <option key={route} value={route}>
+                        {formatLabel(route)}
+                      </option>
+                    ))}
+                  </select>
 
-                <button
-                  type="button"
-                  onClick={handleRunWithConfirmedRoute}
-                  disabled={overrideLoading}
-                  className="mt-4 w-full rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {overrideLoading
-                    ? "Running confirmed route..."
-                    : "Run again with confirmed route"}
-                </button>
-              </div>
-            ) : null}
-
-            {error ? (
-              <div className="mt-4 rounded-[18px] bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
-                {error}
-              </div>
-            ) : null}
-
-            {recentReviews.length > 0 ? (
-              <div className="mt-6">
-                <h3 className="mb-3 text-base font-medium">Recent reviews</h3>
-
-                <div className="space-y-3">
-                  {recentReviews.map((review) => (
-                    <button
-                      type="button"
-                      key={review.id}
-                      onClick={() => {
-                        setResult(review.result);
-                        setConfirmedRoute("");
-                      }}
-                      className="w-full rounded-[18px] border border-zinc-200 bg-white px-4 py-3 text-left text-sm transition hover:border-red-100 hover:bg-red-50/20"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="max-w-[150px] truncate font-medium text-zinc-900">
-                          {review.filename}
-                        </span>
-                        <span
-                          className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-medium ${getRouteTone(
-                            review.route
-                          )}`}
-                        >
-                          {formatLabel(review.route)}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
-                        <span>{review.policy}</span>
-                        <span className="max-w-[130px] truncate">
-                          {review.output}
-                        </span>
-                      </div>
-
-                      <div className="mt-1 text-xs text-zinc-400">
-                        Confidence: {formatPercent(review.confidence)}
-                      </div>
-                    </button>
-                  ))}
+                  <button
+                    type="button"
+                    onClick={() => runAnalyze(confirmedRoute)}
+                    disabled={overrideLoading}
+                    className="w-fit rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white disabled:opacity-60"
+                  >
+                    {overrideLoading ? "Running..." : "Run confirmed route"}
+                  </button>
                 </div>
               </div>
             ) : null}
           </aside>
 
           <section>
-            <div className="mb-8 border-b border-zinc-200 pb-6">
-              <h3 className="text-3xl font-semibold tracking-tight">
-                {result ? getRouteTitle(selectedRoute) : "Review summary"}
-              </h3>
-              <p className="mt-2 text-sm text-zinc-500">
-                A calm, structured summary for careful human review
-              </p>
-            </div>
+            <p className="text-sm text-slate-500">Assistant result</p>
+            <h2
+              className={`mt-3 text-3xl font-semibold tracking-tight ${getDecisionColor(
+                result?.policy?.action
+              )}`}
+            >
+              {getAssistantDecision(result?.policy?.action)}
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">
+              {getAssistantSummary(result, selectedRoute)}
+            </p>
 
-            {!result ? (
-              <div className="flex min-h-[280px] items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-zinc-400">
-                Begin review to see the guided summary
-              </div>
-            ) : (
-              <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_300px]">
-                <div>
-                  <div className="grid gap-6 border-b border-zinc-200 pb-6 md:grid-cols-[1fr_auto_auto_auto] md:items-end">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Recommended next step
-                      </p>
-                      <p className="mt-3 text-[1.25rem] font-semibold leading-snug text-zinc-900">
-                        {policyDisplay.title}
-                      </p>
-                      <p className="mt-2 max-w-xs text-sm leading-6 text-zinc-500">
-                        {policyDisplay.description}
-                      </p>
-                    </div>
+            {result ? (
+              <>
+                <div className="mt-8">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Main output
+                  </p>
+                  <p className="mt-2 text-4xl font-semibold tracking-tight">
+                    {inferenceRan ? result.inference?.top_label : "No inference"}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    {inferenceRan
+                      ? `Confidence: ${formatPercent(result.inference?.top_probability)}`
+                      : "The system stopped before producing a model output."}
+                  </p>
+                </div>
 
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Risk level
-                      </p>
-                      <div className="mt-3">
-                        <span
-                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getRiskTone(
-                            result.policy?.risk_category
-                          )}`}
-                        >
-                          {result.policy?.risk_category || "—"}
-                        </span>
-                      </div>
-                    </div>
+                <div className="mt-8 grid gap-5 md:grid-cols-3">
+                  <InfoLine
+                    label="Route"
+                    value={formatLabel(selectedRoute)}
+                    text={`Confidence: ${formatPercent(result.input_gate?.confidence)}`}
+                  />
+                  <InfoLine
+                    label="Safety"
+                    value={result.policy?.risk_category || "—"}
+                    text={`OOD: ${result.ood?.tier || "—"}`}
+                  />
+                  <InfoLine
+                    label="Model"
+                    value={result.routing?.selected_model || "—"}
+                    text={`${result.detection?.region || "—"} / ${result.detection?.modality || "—"}`}
+                  />
+                </div>
 
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Image check
-                      </p>
-                      <div className="mt-3">
-                        <span
-                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium ${getInputTone(
-                            result.input_gate?.accepted_for_analysis
-                          )}`}
-                        >
-                          {result.input_gate?.accepted_for_analysis === true
-                            ? "Accepted"
-                            : result.input_gate?.accepted_for_analysis === false
-                              ? "Rejected"
-                              : "—"}
-                        </span>
-                      </div>
-                    </div>
+                <div className="mt-8 border-y border-slate-300 py-5">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Pipeline status
+                  </p>
 
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Route
-                      </p>
-                      <div className="mt-3">
-                        <span
-                          className={`inline-flex rounded-md px-3 py-1.5 text-xs font-medium capitalize ${getRouteTone(
-                            selectedRoute
-                          )}`}
-                        >
-                          {formatLabel(selectedRoute)}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <PipelineStep label="Input validated" done={Boolean(result.input_gate)} />
+                    <PipelineStep label="Route selected" done={Boolean(selectedRoute && selectedRoute !== "—")} />
+                    <PipelineStep label="Model inference completed" done={Boolean(result.inference?.top_label)} />
+                    <PipelineStep label="Quality checked" done={Boolean(result.quality?.status)} />
+                    <PipelineStep label="OOD screened" done={Boolean(result.ood?.tier)} />
+                    <PipelineStep label="Focus map generated" done={Boolean(result.explainability?.heatmap_path)} />
+                    <PipelineStep label="Policy decision made" done={Boolean(result.policy?.action)} />
                   </div>
+                </div>
 
-                  {manualOverrideUsed ? (
-                    <div className="mt-8 rounded-[18px] bg-amber-50 px-4 py-4 text-sm text-amber-800 ring-1 ring-amber-100">
-                      <p className="font-medium">Manual override was used</p>
-                      <p className="mt-2 leading-6">
-                        The automatic detector result was overridden by a human
-                        selected route. This should be reviewed carefully.
-                      </p>
-                    </div>
-                  ) : null}
+                <DecisionLegend />
 
-                  <div className="mt-10 border-t border-zinc-200 pt-6">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                      Why this was suggested
-                    </p>
-                    <p className="mt-4 text-base leading-7 text-zinc-700">
-                      {result.policy?.reason ||
-                        policyDisplay.description ||
-                        result.input_gate?.message ||
-                        "—"}
-                    </p>
-                  </div>
-
-                  {conversion?.converted ? (
-                    <div className="mt-10 rounded-[18px] bg-white px-4 py-4 text-sm text-zinc-700 ring-1 ring-zinc-200">
-                      <p className="font-medium text-zinc-900">
-                        Format conversion
-                      </p>
-                      <p className="mt-2">
-                        {conversion.message || "DICOM was converted for analysis."}
-                      </p>
-                      <p className="mt-2 text-zinc-500">
-                        {conversion.source_format} → {conversion.working_format}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-10 grid gap-8 md:grid-cols-2">
+                <div className="mt-10">
+                  <div className="mb-4 flex items-end justify-between gap-4">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        {getOutputLabel(selectedRoute)}
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                        Visual evidence
                       </p>
-                      <p className="mt-3 break-words text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan
-                          ? result.inference?.top_label
-                          : "No inference was run"}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Output confidence
-                      </p>
-                      <p className="mt-3 text-[1.15rem] font-semibold leading-snug text-zinc-900">
-                        {inferenceRan
-                          ? formatPercent(result.inference?.top_probability)
-                          : "—"}
+                      <p className="mt-1 text-sm text-slate-500">
+                        Original image and Grad-CAM++ focus map shown together.
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-10">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                      Findings considered
-                    </p>
-
-                    <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
-                      {result.routing?.accepted_findings_set?.length ? (
-                        result.routing.accepted_findings_set.map((item: string) => (
-                          <div key={item} className="py-3 text-sm text-zinc-700">
-                            {formatLabel(item)}
-                          </div>
-                        ))
-                      ) : (
-                        <div className="py-3 text-sm text-zinc-500">
-                          No findings listed for this review
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-10">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                      Route detector probabilities
-                    </p>
-
-                    <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
-                      {Object.keys(routeProbabilities).length ? (
-                        Object.entries(routeProbabilities).map(
-                          ([label, probability]) => (
-                            <div
-                              key={label}
-                              className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
-                            >
-                              <span className="capitalize">
-                                {formatLabel(label)}
-                              </span>
-                              <span className="font-medium text-zinc-900">
-                                {formatPercent(probability)}
-                              </span>
-                            </div>
-                          )
-                        )
-                      ) : (
-                        <div className="py-3 text-sm text-zinc-500">
-                          No route probabilities available
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {result.routing?.routing_candidate_details?.length ? (
-                    <div className="mt-10">
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Conformal routing candidates
-                      </p>
-
-                      <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
-                        {result.routing.routing_candidate_details.map((candidate) => (
-                          <div
-                            key={candidate.route}
-                            className="grid gap-2 py-3 text-sm text-zinc-700 sm:grid-cols-3"
-                          >
-                            <span className="font-medium text-zinc-900">
-                              {formatLabel(candidate.route)}
-                            </span>
-                            <span>
-                              Probability: {formatPercent(candidate.probability)}
-                            </span>
-                            <span>
-                              Nonconformity:{" "}
-                              {formatNumber(candidate.nonconformity)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {inferenceRan && result.inference?.probabilities ? (
-                    <div className="mt-10">
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Model output probabilities
-                      </p>
-
-                      <div className="mt-4 divide-y divide-zinc-200 border-b border-t border-zinc-200">
-                        {Object.entries(result.inference.probabilities).map(
-                          ([label, probability]) => (
-                            <div
-                              key={label}
-                              className="flex items-center justify-between gap-4 py-3 text-sm text-zinc-700"
-                            >
-                              <span>{label}</span>
-                              <span className="font-medium text-zinc-900">
-                                {formatPercent(probability)}
-                              </span>
-                            </div>
-                          )
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    <div>
+                      <p className="mb-3 text-sm font-semibold">Original image</p>
+                      <div className="flex min-h-[280px] items-center justify-center border-y border-slate-300 py-5">
+                        {previewUrl && !isDicomFile ? (
+                          <img
+                            src={previewUrl}
+                            alt="Input preview"
+                            className="max-h-[340px] w-full object-contain"
+                          />
+                        ) : isDicomFile ? (
+                          <p className="text-sm text-slate-500">
+                            DICOM preview unavailable in browser.
+                          </p>
+                        ) : (
+                          <p className="text-sm text-slate-400">No input selected.</p>
                         )}
                       </div>
                     </div>
-                  ) : null}
 
-                  {warnings.length > 0 ? (
-                    <div className="mt-10 border-t border-zinc-200 pt-6">
-                      <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                        Things to review carefully
+                    <div>
+                      <p className="mb-3 text-sm font-semibold">
+                        Where the model focused
                       </p>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {warnings.map((warning, index) => (
-                          <span
-                            key={`${warning}-${index}`}
-                            className="inline-flex items-center gap-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 ring-1 ring-red-100"
-                          >
-                            <AlertTriangle size={12} />
-                            {warning}
-                          </span>
-                        ))}
+                      <div className="flex min-h-[280px] items-center justify-center border-y border-slate-300 py-5">
+                        {heatmapUrl ? (
+                          <img
+                            src={heatmapUrl}
+                            alt="Heatmap"
+                            className="max-h-[340px] w-full object-contain"
+                          />
+                        ) : (
+                          <p className="text-sm text-slate-400">
+                            Focus map unavailable.
+                          </p>
+                        )}
                       </div>
                     </div>
-                  ) : null}
-
-                  <div className="mt-10 border-t border-zinc-200 pt-6">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                      Technical review details
-                    </p>
-
-                    <div className="mt-4 grid gap-6 text-sm leading-7 text-zinc-700 md:grid-cols-2">
-                      <div>
-                        <p>
-                          Accepted for review:{" "}
-                          {result.input_gate?.accepted_for_analysis === true
-                            ? "Yes"
-                            : result.input_gate?.accepted_for_analysis === false
-                              ? "No"
-                              : "—"}
-                        </p>
-                        <p>
-                          Input confidence:{" "}
-                          {formatPercent(result.input_gate?.confidence)}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>Policy action: {result.policy?.action || "—"}</p>
-                        <p>Risk category: {result.policy?.risk_category || "—"}</p>
-                      </div>
-
-                      <div>
-                        <p>Selected route: {formatLabel(selectedRoute)}</p>
-                        <p>Raw route: {formatLabel(routeDetector?.raw_route_label)}</p>
-                      </div>
-
-                      <div>
-                        <p>
-                          Manual override:{" "}
-                          {manualOverrideUsed ? "Yes" : "No"}
-                        </p>
-                        <p>
-                          Requested override:{" "}
-                          {formatLabel(
-                            routeDetector?.override_metadata?.requested_route
-                          )}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>Detected region: {result.detection?.region || "—"}</p>
-                        <p>Detected modality: {result.detection?.modality || "—"}</p>
-                      </div>
-
-                      <div>
-                        <p>Routing method: {result.routing?.method || "—"}</p>
-                        <p>
-                          Conformal set size:{" "}
-                          {result.routing?.set_size ?? "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>Alpha: {formatNumber(result.routing?.alpha)}</p>
-                        <p>Threshold: {formatNumber(result.routing?.threshold)}</p>
-                      </div>
-
-                      <div>
-                        <p>
-                          Nonconformity:{" "}
-                          {formatNumber(result.routing?.nonconformity)}
-                        </p>
-                        <p>
-                          Requires confirmation:{" "}
-                          {result.routing?.requires_confirmation ? "Yes" : "No"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>Selected model: {result.routing?.selected_model || "—"}</p>
-                        <p>Review set size: {result.routing?.set_size ?? "—"}</p>
-                      </div>
-
-                      <div>
-                        <p>Distribution status: {result.ood?.tier || "—"}</p>
-                        <p>OOD method: {result.ood?.method || "—"}</p>
-                      </div>
-
-                      <div>
-                        <p>Screening score: {formatNumber(result.ood?.score)}</p>
-                        <p>OOD reason: {result.ood?.reason || "—"}</p>
-                      </div>
-
-                      <div>
-                        <p>Quality note: {result.quality?.reason || "—"}</p>
-                        <p>
-                          Re-upload suggested:{" "}
-                          {result.quality?.requires_reupload ? "Yes" : "No"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>
-                          Reliability score:{" "}
-                          {formatNumber(result.inference?.reliability_score)}
-                        </p>
-                        <p>
-                          Disagreement score:{" "}
-                          {formatNumber(result.inference?.disagreement_score)}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>
-                          Uncertainty method:{" "}
-                          {formatLabel(result.inference?.uncertainty_method)}
-                        </p>
-                        <p>
-                          MC passes: {result.inference?.mc_passes ?? "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>
-                          Deep ensemble enabled:{" "}
-                          {result.inference?.deep_ensemble_enabled ? "Yes" : "No"}
-                        </p>
-                        <p>
-                          Ensemble members:{" "}
-                          {result.inference?.ensemble_member_count ?? "—"}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p>
-                          Calibration:{" "}
-                          {result.inference?.calibration?.enabled ? "Enabled" : "Not applied"}
-                        </p>
-                        <p>
-                          Temperature:{" "}
-                          {result.inference?.calibration?.temperature ?? "—"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {result.inference?.uncertainty_note ? (
-                    <div className="mt-10 rounded-[18px] bg-zinc-50 px-4 py-4 text-sm text-zinc-600 ring-1 ring-zinc-200">
-                      <p className="font-medium text-zinc-900">
-                        Uncertainty note
-                      </p>
-                      <p className="mt-2 leading-6">
-                        {result.inference.uncertainty_note}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-10 border-t border-zinc-200 pt-6">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                      Disclaimer
-                    </p>
-
-                    <p className="mt-4 text-sm leading-7 text-zinc-600">
-                      {result.disclaimer ||
-                        appConfig?.disclaimer ||
-                        "This platform is intended solely for research and educational use. Outputs are non-diagnostic and must not be used for clinical decision-making."}
-                    </p>
                   </div>
                 </div>
 
-                <div>
-                  <p className="mb-4 text-xs uppercase tracking-[0.18em] text-zinc-400">
-                    Model focus map
+                <div className="mt-8 border-t border-slate-300 pt-5">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Save review
                   </p>
 
-                  {heatmapUrl ? (
-                    <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-white">
-                      <img
-                        src={heatmapUrl}
-                        alt="Heatmap"
-                        className="h-auto w-full object-cover"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[240px] items-center justify-center rounded-[24px] border border-zinc-200 bg-white text-zinc-400">
-                      Focus map unavailable
-                    </div>
-                  )}
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Save a readable report for presentation, or export the raw backend audit.
+                  </p>
 
-                  <div className="mt-4 text-sm text-zinc-600">
-                    <div className="flex items-center justify-between border-b border-zinc-200 py-3">
-                      <span>Explanation method</span>
-                      <span className="font-medium text-zinc-900">
-                        {result.explainability?.method || "—"}
-                      </span>
-                    </div>
+                  <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-sm">
+                    <button
+                      type="button"
+                      onClick={handleDownloadPdf}
+                      className="relative inline-flex items-center gap-2 border border-slate-300 px-4 py-2.5 font-semibold text-slate-950 transition hover:border-red-400 hover:text-red-500 before:absolute before:left-0 before:top-0 before:h-2.5 before:w-2.5 before:border-l-2 before:border-t-2 before:border-red-500 after:absolute after:bottom-0 after:right-0 after:h-2.5 after:w-2.5 after:border-b-2 after:border-r-2 after:border-red-500"
+                    >
+                      <Download size={15} />
+                      Save readable PDF
+                    </button>
 
-                    <div className="flex items-center justify-between border-b border-zinc-200 py-3">
-                      <span>Explanation target</span>
-                      <span className="font-medium text-zinc-900">
-                        {result.explainability?.target_label ||
-                          result.inference?.top_label ||
-                          "—"}
-                      </span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadJson}
+                      className="relative inline-flex items-center gap-2 border border-slate-300 px-4 py-2.5 font-semibold text-slate-700 transition hover:border-red-400 hover:text-red-500 before:absolute before:left-0 before:top-0 before:h-2.5 before:w-2.5 before:border-l-2 before:border-t-2 before:border-red-400 after:absolute after:bottom-0 after:right-0 after:h-2.5 after:w-2.5 after:border-b-2 after:border-r-2 after:border-red-400"
+                    >
+                      Export technical JSON
+                      <ArrowRight size={15} />
+                    </button>
                   </div>
                 </div>
-              </div>
-            )}
+
+                <details className="mt-8 border-y border-slate-300 py-5">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-slate-900">
+                    <span>
+                      Technical audit
+                      <span className="ml-2 text-xs font-normal text-slate-500">
+                        explained step by step
+                      </span>
+                    </span>
+                    <span className="text-xs font-medium text-red-500">
+                      Open details
+                    </span>
+                  </summary>
+
+                  <div className="mt-5 border-t border-slate-200 pt-5">
+                    <p className="mb-6 max-w-2xl text-sm leading-6 text-slate-600">
+                      This audit explains what happened behind the assistant result.
+                      It is useful for researchers, reviewers, and demo evaluators.
+                    </p>
+
+                    <div className="mb-7 grid gap-5 md:grid-cols-3">
+                      <AuditMetric
+                        label="Route confidence"
+                        value={result.input_gate?.confidence}
+                        helper="How strongly the router selected this image type."
+                      />
+                      <AuditMetric
+                        label="Output confidence"
+                        value={result.inference?.top_probability}
+                        helper="How confident the selected model was in its top output."
+                      />
+                      <AuditMetric
+                        label="Reliability"
+                        value={result.inference?.reliability_score}
+                        helper="Higher means the repeated uncertainty passes were more stable."
+                      />
+                    </div>
+
+                    <div className="space-y-6">
+                      <AuditBlock title="Input and route decision" tag="routing">
+                        <p>
+                          The system first checked the uploaded file and selected the{" "}
+                          <span className="font-semibold text-slate-950">
+                            {formatLabel(selectedRoute)}
+                          </span>{" "}
+                          route.
+                        </p>
+                        <p>
+                          This means the image was handled by the specialist pathway for{" "}
+                          <span className="font-semibold text-slate-950">
+                            {result.detection?.region || "—"} / {result.detection?.modality || "—"}
+                          </span>.
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Raw route: {formatLabel(routeDetector?.raw_route_label)} ·
+                          Accepted for analysis:{" "}
+                          {result.input_gate?.accepted_for_analysis ? "Yes" : "No"}
+                        </p>
+                      </AuditBlock>
+
+                      <AuditBlock title="Model output" tag="inference">
+                        <p>
+                          The selected model was{" "}
+                          <span className="font-semibold text-slate-950">
+                            {result.routing?.selected_model || "—"}
+                          </span>.
+                        </p>
+                        <p>
+                          It produced{" "}
+                          <span className="font-semibold text-slate-950">
+                            {result.inference?.top_label || "No inference"}
+                          </span>{" "}
+                          with {formatPercent(result.inference?.top_probability)} confidence.
+                        </p>
+                        <p className="border-l-2 border-red-300 bg-red-50/60 px-3 py-2 text-xs font-medium text-red-700">
+                          This confidence is model evidence only. It is not a clinical diagnosis.
+                        </p>
+                      </AuditBlock>
+
+                      <AuditBlock title="Image quality check" tag="quality">
+                        <p>
+                          Status:{" "}
+                          <span className="font-semibold text-slate-950">
+                            {result.quality?.status || "—"}
+                          </span>
+                        </p>
+                        <p>{result.quality?.reason || "No quality note returned."}</p>
+                        <p className="text-xs text-slate-500">
+                          Re-upload suggested: {result.quality?.requires_reupload ? "Yes" : "No"}
+                        </p>
+                      </AuditBlock>
+
+                      <AuditBlock title="Distribution check" tag="OOD">
+                        <p>
+                          OOD tier:{" "}
+                          <span className="font-semibold text-slate-950">
+                            {result.ood?.tier || "—"}
+                          </span>
+                        </p>
+                        <p>
+                          This checks whether the image looks too different from the type of
+                          medical images the system expects for this route.
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Method: {result.ood?.method || "—"} · Score:{" "}
+                          {formatNumber(result.ood?.score)}
+                        </p>
+                      </AuditBlock>
+
+                      <AuditBlock title="Uncertainty and calibration" tag="confidence">
+                        <p>
+                          Uncertainty method:{" "}
+                          <span className="font-semibold text-slate-950">
+                            {formatLabel(result.inference?.uncertainty_method)}
+                          </span>.
+                        </p>
+                        <p>
+                          The system used {result.inference?.mc_passes ?? "—"} MC passes to
+                          estimate prediction stability.
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Disagreement: {formatNumber(result.inference?.disagreement_score)} ·
+                          Calibration:{" "}
+                          {result.inference?.calibration?.enabled ? "Enabled" : "Not applied"} ·
+                          Temperature: {result.inference?.calibration?.temperature ?? "—"}
+                        </p>
+                      </AuditBlock>
+
+                      <AuditBlock title="Focus map interpretation" tag="Grad-CAM++">
+                        <p>
+                          Method:{" "}
+                          <span className="font-semibold text-slate-950">
+                            {result.explainability?.method || "—"}
+                          </span>.
+                        </p>
+                        <p>
+                          The focus map shows which visual areas influenced the output most.
+                          It should be used to check whether the model looked at a reasonable
+                          anatomical area, not as proof of disease.
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Target: {result.explainability?.target_label || result.inference?.top_label || "—"}
+                        </p>
+                      </AuditBlock>
+
+                      <AuditBlock title="Final governance decision" tag="policy">
+                        <p>
+                          Final action:{" "}
+                          <span className="font-semibold text-slate-950">
+                            {result.policy?.action || "—"}
+                          </span>.
+                        </p>
+                        <p>{result.policy?.reason || "No policy reason returned."}</p>
+                        <div className="space-y-2 text-xs text-slate-600">
+                          <p>
+                            <span className="font-semibold text-emerald-700">ANSWER</span>
+                            {" "}→ output may be shown.
+                          </p>
+                          <p>
+                            <span className="font-semibold text-amber-700">ESCALATE</span>
+                            {" "}→ output exists, but human review is recommended.
+                          </p>
+                          <p>
+                            <span className="font-semibold text-amber-700">REQUEST_EVIDENCE</span>
+                            {" "}→ a clearer or more suitable image is needed.
+                          </p>
+                          <p>
+                            <span className="font-semibold text-red-700">REFUSE</span>
+                            {" "}→ the system refuses to provide an output because safety checks were not satisfied.
+                          </p>
+                          <p>
+                            <span className="font-semibold text-red-700">STOP</span>
+                            {" "}→ the system stopped before inference or before showing an unsafe output.
+                          </p>
+                        </div>
+                      </AuditBlock>
+                    </div>
+                  </div>
+                </details>
+              </>
+            ) : null}
           </section>
         </section>
 
-        {batchResult ? (
-          <section className="mt-14 border-t border-zinc-200 pt-10">
-            <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                  Batch review summaries
-                </p>
-                <h3 className="mt-2 text-3xl font-semibold tracking-tight">
-                  Full batch results
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-zinc-500">
-                  Each uploaded image is listed with its route, policy decision,
-                  model output, confidence, quality status, OOD status, and focus map.
+        <footer className="mt-14 border-t border-slate-300 py-8">
+          <div className="grid gap-8 md:grid-cols-3">
+            <div>
+              <div className="mb-3 flex items-center gap-3">
+                <div className="relative h-8 w-12">
+                  <span className="absolute left-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-slate-950" />
+                  <span className="absolute right-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-slate-950" />
+                  <span className="absolute left-1/2 top-1/2 h-[2px] w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-400" />
+                </div>
+                <p className="font-semibold text-slate-950">
+                  Governed Medical Image Analysis
                 </p>
               </div>
+              <p className="max-w-md text-sm leading-7 text-slate-500">
+                A gentle research-use assistant for careful, non-diagnostic medical image review.
+              </p>
+            </div>
 
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="rounded-xl bg-white px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
-                  <p className="font-semibold text-zinc-900">
-                    {batchResult.batch_size}
-                  </p>
-                  <p className="text-zinc-500">Total</p>
-                </div>
-                <div className="rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-100">
-                  <p className="font-semibold text-emerald-700">
-                    {batchResult.completed}
-                  </p>
-                  <p className="text-emerald-700">Done</p>
-                </div>
-                <div className="rounded-xl bg-red-50 px-4 py-3 ring-1 ring-red-100">
-                  <p className="font-semibold text-red-700">
-                    {batchResult.failed}
-                  </p>
-                  <p className="text-red-700">Failed</p>
-                </div>
+            <div>
+              <p className="mb-3 text-sm font-semibold text-slate-950">Quick links</p>
+              <div className="space-y-2 text-sm text-slate-600">
+                <Link href="/" className="flex items-center gap-2 hover:text-red-500">
+                  <Home size={15} />
+                  Home
+                </Link>
+                <Link href="/demo" className="flex items-center gap-2 hover:text-red-500">
+                  <Play size={15} />
+                  Demo
+                </Link>
+                <Link href="/workspace" className="flex items-center gap-2 hover:text-red-500">
+                  <LayoutDashboard size={15} />
+                  Workspace
+                </Link>
+                <Link href="/about" className="flex items-center gap-2 hover:text-red-500">
+                  <CircleHelp size={15} />
+                  About
+                </Link>
               </div>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              {batchResult.results.map((item) => {
-                const itemResult = item.result;
-                const itemRoute =
-                  itemResult?.input_gate?.selected_route ||
-                  itemResult?.input_gate?.top_level_gate?.route_detector?.route_label ||
-                  "—";
-
-                const itemRawRoute =
-                  itemResult?.input_gate?.top_level_gate?.route_detector?.raw_route_label ||
-                  "—";
-
-                const itemPolicy = itemResult?.policy?.action || "—";
-                const itemRisk = itemResult?.policy?.risk_category || "—";
-                const itemOutput =
-                  itemResult?.inference?.top_label || "No inference";
-                const itemConfidence =
-                  itemResult?.inference?.top_probability;
-                const itemInputConfidence =
-                  itemResult?.input_gate?.confidence;
-                const itemModel = itemResult?.routing?.selected_model || "—";
-                const itemQuality = itemResult?.quality?.status || "—";
-                const itemQualityReason = itemResult?.quality?.reason || "—";
-                const itemOod = itemResult?.ood?.tier || "—";
-                const itemOodMethod = itemResult?.ood?.method || "—";
-                const itemExplanation =
-                  itemResult?.explainability?.method || "—";
-                const itemHeatmapRaw =
-                  itemResult?.explainability?.heatmap_path || "";
-                const itemHeatmapUrl = itemHeatmapRaw
-                  ? itemHeatmapRaw.startsWith("http://") ||
-                    itemHeatmapRaw.startsWith("https://")
-                    ? itemHeatmapRaw
-                    : `${HEATMAP_BASE_URL}${itemHeatmapRaw}`
-                  : "";
-
-                const itemWarnings = [
-                  ...(itemResult?.policy?.warnings ?? []),
-                  ...(itemResult?.quality?.warnings ?? []),
-                  ...(itemResult?.warnings ?? []),
-                  ...(itemResult?.explainability?.warning
-                    ? [itemResult.explainability.warning]
-                    : []),
-                ].filter(Boolean);
-
-                return (
-                  <article
-                    key={`${item.index}-${item.filename}`}
-                    className="overflow-hidden rounded-[24px] border border-zinc-200 bg-white shadow-[0_12px_30px_rgba(0,0,0,0.04)]"
-                  >
-                    <div className="border-b border-zinc-200 px-5 py-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="max-w-[360px] truncate text-base font-semibold text-zinc-900">
-                            {item.filename}
-                          </p>
-                          <p className="mt-1 text-xs text-zinc-500">
-                            Batch item #{item.index}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <span
-                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${getRouteTone(
-                              itemRoute
-                            )}`}
-                          >
-                            {formatLabel(itemRoute)}
-                          </span>
-
-                          <span
-                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${getRiskTone(
-                              itemRisk
-                            )}`}
-                          >
-                            {itemRisk}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_180px]">
-                      <div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
-                              Policy
-                            </p>
-                            <p className="mt-2 font-semibold text-zinc-900">
-                              {itemPolicy}
-                            </p>
-                            <p className="mt-1 text-xs leading-5 text-zinc-500">
-                              {itemResult?.policy?.reason || "—"}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
-                              Output
-                            </p>
-                            <p className="mt-2 font-semibold text-zinc-900">
-                              {itemOutput}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                              Confidence: {formatPercent(itemConfidence)}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
-                              Routing
-                            </p>
-                            <p className="mt-2 text-sm text-zinc-700">
-                              Selected: {formatLabel(itemRoute)}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                              Raw: {formatLabel(itemRawRoute)} · Input confidence:{" "}
-                              {formatPercent(itemInputConfidence)}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
-                              Model
-                            </p>
-                            <p className="mt-2 text-sm text-zinc-700">
-                              {itemModel}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                              Explanation: {itemExplanation}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
-                              Quality
-                            </p>
-                            <p className="mt-2 text-sm text-zinc-700">
-                              {itemQuality}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                              {itemQualityReason}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
-                              OOD check
-                            </p>
-                            <p className="mt-2 text-sm text-zinc-700">
-                              {itemOod}
-                            </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                              {itemOodMethod}
-                            </p>
-                          </div>
-                        </div>
-
-                        {itemWarnings.length > 0 ? (
-                          <div className="mt-5">
-                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
-                              Warnings
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {itemWarnings.map((warning, warningIndex) => (
-                                <span
-                                  key={`${warning}-${warningIndex}`}
-                                  className="inline-flex items-center gap-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 ring-1 ring-red-100"
-                                >
-                                  <AlertTriangle size={12} />
-                                  {warning}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {itemResult ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setResult(itemResult);
-                              setConfirmedRoute("");
-                              window.scrollTo({ top: 0, behavior: "smooth" });
-                            }}
-                            className="mt-5 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
-                          >
-                            Open full individual review
-                          </button>
-                        ) : null}
-
-                        {item.status === "failed" ? (
-                          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
-                            {item.error || "This batch item failed."}
-                          </p>
-                        ) : null}
-                      </div>
-
-                      <div>
-                        <p className="mb-3 text-xs uppercase tracking-[0.16em] text-zinc-400">
-                          Focus map
-                        </p>
-
-                        {itemHeatmapUrl ? (
-                          <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-zinc-50">
-                            <img
-                              src={itemHeatmapUrl}
-                              alt={`Focus map for ${item.filename}`}
-                              className="h-auto w-full object-cover"
-                            />
-                          </div>
-                        ) : (
-                          <div className="flex min-h-[160px] items-center justify-center rounded-[14px] border border-zinc-200 bg-zinc-50 text-xs text-zinc-400">
-                            No heatmap
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <ShieldCheck size={16} className="text-red-500" />
+                <p className="text-sm font-semibold text-slate-950">Notice</p>
+              </div>
+              <p className="text-xs leading-6 text-slate-500">
+                <span className="font-semibold text-slate-700">Research-use only.</span>{" "}
+                Outputs are non-diagnostic and must not be used for clinical decision-making.
+              </p>
             </div>
-          </section>
-        ) : null}
+          </div>
+        </footer>
+      </div>
+    </main>
+  );
+}
 
+
+
+function PipelineStep({
+  label,
+  done,
+}: {
+  label: string;
+  done: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span
+        className={`h-2.5 w-2.5 rounded-full ${
+          done ? "bg-red-500" : "bg-slate-300"
+        }`}
+      />
+      <span className={done ? "text-slate-950" : "text-slate-400"}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function DecisionLegend() {
+  return (
+    <div className="mt-5 border-y border-slate-300 py-4">
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+        Governance decisions
+      </p>
+
+      <div className="mt-3 grid gap-2 text-xs leading-5 md:grid-cols-2">
+        <p><span className="font-semibold text-emerald-700">ANSWER</span> → output may be shown</p>
+        <p><span className="font-semibold text-amber-700">ESCALATE</span> → human review recommended</p>
+        <p><span className="font-semibold text-amber-700">REQUEST_EVIDENCE</span> → better image needed</p>
+        <p><span className="font-semibold text-red-700">REFUSE</span> → output refused</p>
+        <p><span className="font-semibold text-red-700">STOP</span> → pipeline stopped safely</p>
+      </div>
+    </div>
+  );
+}
+
+function ReportPreview() {
+  return (
+    <div className="mt-6 border-y border-slate-300 py-5">
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+        Report includes
+      </p>
+
+      <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
+        <p>✓ Output summary</p>
+        <p>✓ Route decision</p>
+        <p>✓ Quality check</p>
+        <p>✓ OOD screening</p>
+        <p>✓ Uncertainty values</p>
+        <p>✓ Original image</p>
+        <p>✓ Grad-CAM++ focus map</p>
+        <p>✓ Governance decision</p>
+      </div>
+    </div>
+  );
+}
+
+function AuditMetric({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value?: number | null;
+  helper: string;
+}) {
+  const percent = value == null ? 0 : Math.max(0, Math.min(100, value * 100));
+
+  return (
+    <div className="border-b border-slate-200 pb-4">
+      <div className="mb-2 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">{label}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{helper}</p>
+        </div>
+        <span className="text-sm font-semibold text-slate-800">
+          {value == null ? "—" : formatPercent(value)}
+        </span>
       </div>
 
-      <footer id="contact" className="mt-16 border-t border-zinc-200 bg-[#F7F7F4]">
-        <div className="mx-auto grid max-w-7xl gap-10 px-6 py-10 md:grid-cols-3">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 text-zinc-900">
-              <ShieldPlus size={18} className="text-red-500" />
-              <span className="font-semibold">Governed Medical Image Analysis</span>
-            </div>
-            <p className="text-sm leading-7 text-zinc-600">
-              A research-use assistant for careful, non-diagnostic medical image
-              review.
-            </p>
-          </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className="h-2 rounded-full bg-red-500"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
-          <div>
-            <h4 className="mb-3 text-sm font-semibold text-zinc-900">
-              Quick links
-            </h4>
-            <div className="space-y-2 text-sm text-zinc-600">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 hover:text-zinc-900"
-              >
-                <House size={16} />
-                Home
-              </Link>
-              <br />
-              <Link
-                href="/workspace"
-                className="inline-flex items-center gap-2 hover:text-zinc-900"
-              >
-                <LayoutDashboard size={16} />
-                Workspace
-              </Link>
-              <br />
-              <Link
-                href="/about"
-                className="inline-flex items-center gap-2 hover:text-zinc-900"
-              >
-                <CircleHelp size={16} />
-                About
-              </Link>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="mb-3 text-sm font-semibold text-zinc-900">Contact</h4>
-            <div className="space-y-2 text-sm text-zinc-600">
-              <div className="inline-flex items-center gap-2">
-                <Mail size={16} />
-                research@medaix.ai
-              </div>
-              <br />
-              <div className="inline-flex items-center gap-2">
-                <Phone size={16} />
-                +00 000 000 0000
-              </div>
-              <br />
-              <div className="inline-flex items-center gap-2">
-                <MapPin size={16} />
-                Ankara, Türkiye
-              </div>
-            </div>
-          </div>
+function AuditBlock({
+  title,
+  tag,
+  children,
+}: {
+  title: string;
+  tag: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-b border-slate-200 pb-5">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+          <h4 className="text-base font-semibold tracking-tight text-slate-950">
+            {title}
+          </h4>
         </div>
 
-        <div className="border-t border-zinc-200 bg-white/70">
-          <div className="mx-auto max-w-7xl px-6 py-4">
-            <p className="text-xs leading-6 tracking-[0.01em] text-zinc-500">
-              <span className="font-semibold text-zinc-700">
-                Important notice.
-              </span>{" "}
-              This platform is intended only for research and educational use.
-              Outputs are non-diagnostic and must not be used for clinical
-              decision-making.
-            </p>
-          </div>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-red-500">
+          {tag}
+        </span>
+      </div>
+
+      <div className="border-l-2 border-slate-200 pl-4">
+        <div className="space-y-3 text-sm leading-7 text-slate-600">
+          {children}
         </div>
-      </footer>
-    </main>
+      </div>
+    </section>
+  );
+}
+
+function AuditItem({
+  title,
+  value,
+  text,
+}: {
+  title: string;
+  value: string;
+  text: string;
+}) {
+  return (
+    <div className="grid gap-2 border-b border-slate-200 pb-4 md:grid-cols-[180px_minmax(0,1fr)]">
+      <div>
+        <p className="font-semibold text-slate-950">{title}</p>
+      </div>
+      <div>
+        <p className="font-semibold text-slate-950">{value}</p>
+        <p className="mt-1 text-slate-600">{text}</p>
+      </div>
+    </div>
   );
 }
