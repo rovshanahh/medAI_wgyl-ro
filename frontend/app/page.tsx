@@ -13,6 +13,8 @@ import {
   ShieldPlus,
 } from "lucide-react";
 import Link from "next/link";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 type AppConfig = {
   supported_uploads?: string[];
@@ -152,12 +154,40 @@ type RecentReview = {
   result: AnalysisResponse;
 };
 
+
+
+type BatchResultItem = {
+  index: number;
+  filename: string;
+  status: string;
+  result?: AnalysisResponse;
+  error?: string;
+};
+
+type BatchResponse = {
+  batch_size: number;
+  max_batch_size: number;
+  completed: number;
+  failed: number;
+  results: BatchResultItem[];
+};
+
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 const HEATMAP_BASE_URL = API_BASE_URL;
 
 const FALLBACK_ROUTES = [
+  {
+    route: "abdomen_ct",
+    region: "abdomen",
+    modality: "ct",
+    model: "abdomen_ct_resnet18",
+    description:
+      "Reviews kidney CT images and classifies cyst, normal, stone, or tumor cases.",
+    status: "ACTIVE",
+  },
   {
     route: "brain_mri",
     region: "brain",
@@ -231,6 +261,8 @@ function formatLabel(value?: string | null) {
 
 function getRouteTitle(route?: string | null) {
   switch (route) {
+    case "abdomen_ct":
+      return "Abdomen CT review";
     case "brain_mri":
       return "Brain MRI review";
     case "bone_xray":
@@ -243,8 +275,6 @@ function getRouteTitle(route?: string | null) {
       return "Retina fundus review";
     case "skin_dermoscopy":
       return "Skin dermoscopy review";
-    case "abdomen_ct":
-      return "Abdomen CT review";
     case "unknown":
       return "Unsupported or uncertain input";
     default:
@@ -258,12 +288,12 @@ function getRouteCardTitle(route?: string | null) {
 
 function getOutputLabel(route?: string | null) {
   switch (route) {
-    case "brain_mri":
-      return "Model output";
+    case "abdomen_ct":
     case "bone_xray":
     case "breast_mammography":
-    case "abdomen_ct":
       return "Classification output";
+    case "brain_mri":
+      return "Model output";
     case "chest_xray":
       return "Primary finding";
     case "retina_fundus":
@@ -341,6 +371,8 @@ function getInputTone(accepted?: boolean) {
 
 function getRouteTone(route?: string | null) {
   switch (route) {
+    case "abdomen_ct":
+      return "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100";
     case "brain_mri":
       return "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100";
     case "bone_xray":
@@ -353,8 +385,6 @@ function getRouteTone(route?: string | null) {
       return "bg-violet-50 text-violet-700 ring-1 ring-violet-100";
     case "skin_dermoscopy":
       return "bg-orange-50 text-orange-700 ring-1 ring-orange-100";
-    case "abdomen_ct":
-      return "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-100";
     case "unknown":
       return "bg-red-50 text-red-700 ring-1 ring-red-100";
     default:
@@ -364,11 +394,14 @@ function getRouteTone(route?: string | null) {
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
+  const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [batchResult, setBatchResult] = useState<BatchResponse | null>(null);
   const [recentReviews, setRecentReviews] = useState<RecentReview[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [confirmedRoute, setConfirmedRoute] = useState("");
   const [loading, setLoading] = useState(false);
+  const [batchLoading, setBatchLoading] = useState(false);
   const [overrideLoading, setOverrideLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -498,7 +531,15 @@ export default function Home() {
         body: formData,
       });
 
-      const data: AnalysisResponse & { detail?: string } = await response.json();
+      const text = await response.text();
+
+      let data: AnalysisResponse & { detail?: string };
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || "Request failed.");
+      }
 
       if (!response.ok) {
         throw new Error(data?.detail || "Request failed.");
@@ -518,42 +559,39 @@ export default function Home() {
       setError("Please choose an image first.");
       return;
     }
-  
+
     if (!confirmedRoute) {
       setError("Please select a confirmed route first.");
       return;
     }
-  
+
     try {
       setOverrideLoading(true);
       setError("");
-  
-      console.log("Running override with route:", confirmedRoute);
-  
+
       const formData = new FormData();
       formData.append("file", file);
       formData.append("route_override", confirmedRoute);
-  
+
       const response = await fetch(`${API_BASE_URL}/analyze/override`, {
         method: "POST",
         body: formData,
       });
-  
+
       const text = await response.text();
-      console.log("Override raw response:", text);
-  
+
       let data: AnalysisResponse & { detail?: string };
-  
+
       try {
         data = JSON.parse(text);
       } catch {
         throw new Error(text || "Override request failed.");
       }
-  
+
       if (!response.ok) {
         throw new Error(data?.detail || "Override request failed.");
       }
-  
+
       setResult(data);
       addRecentReview(data, file);
       setConfirmedRoute("");
@@ -564,9 +602,260 @@ export default function Home() {
     }
   };
 
+
+  const handleDownloadReport = () => {
+    if (!result) {
+      setError("No review result available to download.");
+      return;
+    }
+
+    const report = {
+      generated_at: new Date().toISOString(),
+      project: "Governed Medical Image Analysis",
+      notice:
+        "Research-use only. Outputs are non-diagnostic and must not be used for clinical decision-making.",
+      result,
+    };
+
+    const blob = new Blob([JSON.stringify(report, null, 2)], {
+      type: "application/json",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `governed_medical_image_analysis_report_${result.analysis_id || "review"}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  };
+
+
+  const handleDownloadPdfReport = () => {
+    if (!result) {
+      setError("No review result available to download.");
+      return;
+    }
+
+    const doc = new jsPDF();
+    const generatedAt = new Date().toLocaleString();
+
+    const selectedRouteForReport =
+      result.input_gate?.selected_route ||
+      result.input_gate?.top_level_gate?.route_detector?.route_label ||
+      "—";
+
+    const modelOutput = result.inference?.top_label || "No inference";
+    const confidence = formatPercent(result.inference?.top_probability);
+    const policyAction = result.policy?.action || "—";
+    const riskLevel = result.policy?.risk_category || "—";
+    const routeConfidence = formatPercent(result.input_gate?.confidence);
+    const heatmapPath = result.explainability?.heatmap_path || "Unavailable";
+    const manualOverride =
+      result.input_gate?.manual_override ||
+      result.detection?.manual_override ||
+      result.input_gate?.top_level_gate?.route_detector?.manual_override
+        ? "Yes"
+        : "No";
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("Governed Medical Image Analysis Report", 14, 18);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text("Research-use only. Non-diagnostic output.", 14, 26);
+    doc.text(`Generated: ${generatedAt}`, 14, 32);
+
+    autoTable(doc, {
+      startY: 42,
+      head: [["Field", "Value"]],
+      body: [
+        ["Analysis ID", result.analysis_id || "—"],
+        ["File name", result.filename || file?.name || "—"],
+        ["Selected route", formatLabel(selectedRouteForReport)],
+        ["Detected region", result.detection?.region || "—"],
+        ["Detected modality", result.detection?.modality || "—"],
+        ["Selected model", result.routing?.selected_model || "—"],
+        ["Policy action", policyAction],
+        ["Risk level", riskLevel],
+        ["Model output", modelOutput],
+        ["Output confidence", confidence],
+        ["Input confidence", routeConfidence],
+        ["Manual override used", manualOverride],
+        ["Quality status", result.quality?.status || "—"],
+        ["Quality note", result.quality?.reason || "—"],
+        ["OOD status", result.ood?.tier || "—"],
+        ["OOD method", result.ood?.method || "—"],
+        ["Explanation method", result.explainability?.method || "—"],
+        ["Explanation target", result.explainability?.target_label || result.inference?.top_label || "—"],
+        ["Heatmap path", heatmapPath],
+      ],
+      styles: {
+        fontSize: 9,
+        cellPadding: 3,
+      },
+      headStyles: {
+        fillColor: [239, 68, 68],
+      },
+      columnStyles: {
+        0: { fontStyle: "bold", cellWidth: 55 },
+        1: { cellWidth: 125 },
+      },
+    });
+
+    const probabilityRows = result.inference?.probabilities
+      ? Object.entries(result.inference.probabilities).map(([label, probability]) => [
+          label,
+          formatPercent(probability),
+        ])
+      : [];
+
+    if (probabilityRows.length > 0) {
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        head: [["Model Probability", "Value"]],
+        body: probabilityRows,
+        styles: {
+          fontSize: 9,
+          cellPadding: 3,
+        },
+        headStyles: {
+          fillColor: [39, 39, 42],
+        },
+        columnStyles: {
+          0: { fontStyle: "bold", cellWidth: 90 },
+          1: { cellWidth: 90 },
+        },
+      });
+    }
+
+    const warningRows = warnings.length
+      ? warnings.map((warning) => [warning])
+      : [["No warnings reported."]];
+
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 10,
+      head: [["Warnings / Review Notes"]],
+      body: warningRows,
+      styles: {
+        fontSize: 9,
+        cellPadding: 3,
+      },
+      headStyles: {
+        fillColor: [245, 158, 11],
+      },
+    });
+
+    const finalY = (doc as any).lastAutoTable.finalY + 12;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Important notice", 14, finalY);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    const disclaimer =
+      result.disclaimer ||
+      appConfig?.disclaimer ||
+      "This platform is intended solely for research and educational use. Outputs are non-diagnostic and must not be used for clinical decision-making.";
+
+    const disclaimerLines = doc.splitTextToSize(disclaimer, 180);
+    doc.text(disclaimerLines, 14, finalY + 6);
+
+    doc.save(`governed_medical_image_analysis_report_${result.analysis_id || "review"}.pdf`);
+  };
+
+
+  const handleBatchFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files ?? []);
+    setBatchFiles(selected);
+    setBatchResult(null);
+    setError("");
+  };
+
+  const handleAnalyzeBatch = async () => {
+    if (!batchFiles.length) {
+      setError("Please choose at least one image for batch review.");
+      return;
+    }
+
+    try {
+      setBatchLoading(true);
+      setError("");
+      setBatchResult(null);
+
+      const formData = new FormData();
+
+      batchFiles.forEach((selectedFile) => {
+        formData.append("files", selectedFile);
+      });
+
+      const response = await fetch(`${API_BASE_URL}/analyze/batch`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const text = await response.text();
+
+      let data: BatchResponse & { detail?: string };
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || "Batch request failed.");
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.detail || "Batch request failed.");
+      }
+
+      setBatchResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const handleDownloadBatchJson = () => {
+    if (!batchResult) {
+      setError("No batch result available to download.");
+      return;
+    }
+
+    const report = {
+      generated_at: new Date().toISOString(),
+      project: "Governed Medical Image Analysis",
+      notice:
+        "Research-use only. Outputs are non-diagnostic and must not be used for clinical decision-making.",
+      batch: batchResult,
+    };
+
+    const blob = new Blob([JSON.stringify(report, null, 2)], {
+      type: "application/json",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `governed_medical_image_analysis_batch_report_${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  };
+
   const handleReset = () => {
     setFile(null);
+    setBatchFiles([]);
     setResult(null);
+    setBatchResult(null);
     setConfirmedRoute("");
     setError("");
   };
@@ -592,7 +881,7 @@ export default function Home() {
                 Research-use assistant
               </p>
               <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-                MedAIx
+                Governed Medical Image Analysis
               </h1>
             </div>
           </div>
@@ -686,8 +975,9 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="mt-8 flex gap-3">
+            <div className="mt-8 flex flex-wrap gap-3">
               <button
+                type="button"
                 onClick={handleAnalyze}
                 disabled={loading}
                 className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-5 py-3 text-sm font-medium text-white shadow-[0_12px_28px_rgba(239,68,68,0.22)] transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
@@ -697,11 +987,32 @@ export default function Home() {
               </button>
 
               <button
+                type="button"
                 onClick={handleReset}
                 className="rounded-xl bg-white px-5 py-3 text-sm text-zinc-700 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
               >
                 Reset
               </button>
+
+              {result ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleDownloadReport}
+                    className="rounded-xl bg-white px-5 py-3 text-sm text-zinc-700 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
+                  >
+                    Download JSON
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdfReport}
+                    className="rounded-xl bg-white px-5 py-3 text-sm text-zinc-700 shadow-[0_8px_24px_rgba(0,0,0,0.04)] transition hover:bg-zinc-50"
+                  >
+                    Download PDF
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
         </section>
@@ -765,6 +1076,151 @@ export default function Home() {
               </div>
             )}
 
+
+            <div className="mt-6 rounded-[24px] border border-zinc-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-medium text-zinc-900">
+                    Batch review
+                  </h3>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                    Upload multiple images and run them through the governed
+                    pipeline in one request.
+                  </p>
+                </div>
+
+                <span className="rounded-md bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-600">
+                  Max {appConfig?.max_batch_size ?? 25}
+                </span>
+              </div>
+
+              <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-[18px] border border-dashed border-zinc-300 bg-zinc-50 px-4 py-5 text-center transition hover:border-red-300 hover:bg-red-50/20">
+                <span className="text-sm text-zinc-700">
+                  Select multiple images
+                </span>
+                <span className="mt-1 text-xs text-zinc-500">
+                  {batchFiles.length
+                    ? `${batchFiles.length} file(s) selected`
+                    : "No batch files selected"}
+                </span>
+
+                <input
+                  type="file"
+                  multiple
+                  accept=".png,.jpg,.jpeg,.tif,.tiff,.dcm"
+                  className="hidden"
+                  onChange={handleBatchFileChange}
+                />
+              </label>
+
+              {batchFiles.length > 0 ? (
+                <div className="mt-3 max-h-28 space-y-1 overflow-y-auto text-xs text-zinc-500">
+                  {batchFiles.map((item) => (
+                    <div key={`${item.name}-${item.size}`} className="truncate">
+                      {item.name}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={handleAnalyzeBatch}
+                disabled={batchLoading}
+                className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {batchLoading ? "Running batch..." : "Run batch review"}
+              </button>
+
+              {batchResult ? (
+                <div className="mt-5">
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="rounded-xl bg-zinc-50 px-2 py-2">
+                      <p className="font-semibold text-zinc-900">
+                        {batchResult.batch_size}
+                      </p>
+                      <p className="text-zinc-500">Total</p>
+                    </div>
+                    <div className="rounded-xl bg-emerald-50 px-2 py-2">
+                      <p className="font-semibold text-emerald-700">
+                        {batchResult.completed}
+                      </p>
+                      <p className="text-emerald-700">Done</p>
+                    </div>
+                    <div className="rounded-xl bg-red-50 px-2 py-2">
+                      <p className="font-semibold text-red-700">
+                        {batchResult.failed}
+                      </p>
+                      <p className="text-red-700">Failed</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 max-h-72 divide-y divide-zinc-200 overflow-y-auto border-y border-zinc-200">
+                    {batchResult.results.map((item) => {
+                      const itemRoute =
+                        item.result?.input_gate?.selected_route ||
+                        item.result?.input_gate?.top_level_gate?.route_detector
+                          ?.route_label ||
+                        "—";
+
+                      const itemPolicy = item.result?.policy?.action || "—";
+                      const itemOutput =
+                        item.result?.inference?.top_label || "No inference";
+                      const itemConfidence =
+                        item.result?.inference?.top_probability;
+
+                      return (
+                        <button
+                          type="button"
+                          key={`${item.index}-${item.filename}`}
+                          onClick={() => {
+                            if (item.result) {
+                              setResult(item.result);
+                              setConfirmedRoute("");
+                            }
+                          }}
+                          className="w-full py-3 text-left text-xs transition hover:bg-zinc-50"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="max-w-[150px] truncate font-medium text-zinc-900">
+                              {item.filename}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-medium ${getRouteTone(
+                                itemRoute
+                              )}`}
+                            >
+                              {formatLabel(itemRoute)}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 grid grid-cols-3 gap-2 text-zinc-500">
+                            <span>{itemPolicy}</span>
+                            <span className="truncate">{itemOutput}</span>
+                            <span>{formatPercent(itemConfidence)}</span>
+                          </div>
+
+                          {item.status === "failed" ? (
+                            <p className="mt-2 text-red-600">
+                              {item.error || "Failed"}
+                            </p>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadBatchJson}
+                    className="mt-4 w-full rounded-xl bg-white px-4 py-2 text-sm text-zinc-700 ring-1 ring-zinc-200 transition hover:bg-zinc-50"
+                  >
+                    Download batch JSON
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
             {needsManualConfirmation ? (
               <div className="mt-5 rounded-[20px] border border-amber-200 bg-amber-50 p-4">
                 <p className="text-sm font-semibold text-amber-900">
@@ -816,6 +1272,7 @@ export default function Home() {
                 <div className="space-y-3">
                   {recentReviews.map((review) => (
                     <button
+                      type="button"
                       key={review.id}
                       onClick={() => {
                         setResult(review.result);
@@ -1278,6 +1735,270 @@ export default function Home() {
             )}
           </section>
         </section>
+
+        {batchResult ? (
+          <section className="mt-14 border-t border-zinc-200 pt-10">
+            <div className="mb-8 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+                  Batch review summaries
+                </p>
+                <h3 className="mt-2 text-3xl font-semibold tracking-tight">
+                  Full batch results
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-zinc-500">
+                  Each uploaded image is listed with its route, policy decision,
+                  model output, confidence, quality status, OOD status, and focus map.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-xl bg-white px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+                  <p className="font-semibold text-zinc-900">
+                    {batchResult.batch_size}
+                  </p>
+                  <p className="text-zinc-500">Total</p>
+                </div>
+                <div className="rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-100">
+                  <p className="font-semibold text-emerald-700">
+                    {batchResult.completed}
+                  </p>
+                  <p className="text-emerald-700">Done</p>
+                </div>
+                <div className="rounded-xl bg-red-50 px-4 py-3 ring-1 ring-red-100">
+                  <p className="font-semibold text-red-700">
+                    {batchResult.failed}
+                  </p>
+                  <p className="text-red-700">Failed</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              {batchResult.results.map((item) => {
+                const itemResult = item.result;
+                const itemRoute =
+                  itemResult?.input_gate?.selected_route ||
+                  itemResult?.input_gate?.top_level_gate?.route_detector?.route_label ||
+                  "—";
+
+                const itemRawRoute =
+                  itemResult?.input_gate?.top_level_gate?.route_detector?.raw_route_label ||
+                  "—";
+
+                const itemPolicy = itemResult?.policy?.action || "—";
+                const itemRisk = itemResult?.policy?.risk_category || "—";
+                const itemOutput =
+                  itemResult?.inference?.top_label || "No inference";
+                const itemConfidence =
+                  itemResult?.inference?.top_probability;
+                const itemInputConfidence =
+                  itemResult?.input_gate?.confidence;
+                const itemModel = itemResult?.routing?.selected_model || "—";
+                const itemQuality = itemResult?.quality?.status || "—";
+                const itemQualityReason = itemResult?.quality?.reason || "—";
+                const itemOod = itemResult?.ood?.tier || "—";
+                const itemOodMethod = itemResult?.ood?.method || "—";
+                const itemExplanation =
+                  itemResult?.explainability?.method || "—";
+                const itemHeatmapRaw =
+                  itemResult?.explainability?.heatmap_path || "";
+                const itemHeatmapUrl = itemHeatmapRaw
+                  ? itemHeatmapRaw.startsWith("http://") ||
+                    itemHeatmapRaw.startsWith("https://")
+                    ? itemHeatmapRaw
+                    : `${HEATMAP_BASE_URL}${itemHeatmapRaw}`
+                  : "";
+
+                const itemWarnings = [
+                  ...(itemResult?.policy?.warnings ?? []),
+                  ...(itemResult?.quality?.warnings ?? []),
+                  ...(itemResult?.warnings ?? []),
+                  ...(itemResult?.explainability?.warning
+                    ? [itemResult.explainability.warning]
+                    : []),
+                ].filter(Boolean);
+
+                return (
+                  <article
+                    key={`${item.index}-${item.filename}`}
+                    className="overflow-hidden rounded-[24px] border border-zinc-200 bg-white shadow-[0_12px_30px_rgba(0,0,0,0.04)]"
+                  >
+                    <div className="border-b border-zinc-200 px-5 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="max-w-[360px] truncate text-base font-semibold text-zinc-900">
+                            {item.filename}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Batch item #{item.index}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <span
+                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${getRouteTone(
+                              itemRoute
+                            )}`}
+                          >
+                            {formatLabel(itemRoute)}
+                          </span>
+
+                          <span
+                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${getRiskTone(
+                              itemRisk
+                            )}`}
+                          >
+                            {itemRisk}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1fr)_180px]">
+                      <div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                              Policy
+                            </p>
+                            <p className="mt-2 font-semibold text-zinc-900">
+                              {itemPolicy}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-zinc-500">
+                              {itemResult?.policy?.reason || "—"}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                              Output
+                            </p>
+                            <p className="mt-2 font-semibold text-zinc-900">
+                              {itemOutput}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              Confidence: {formatPercent(itemConfidence)}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                              Routing
+                            </p>
+                            <p className="mt-2 text-sm text-zinc-700">
+                              Selected: {formatLabel(itemRoute)}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              Raw: {formatLabel(itemRawRoute)} · Input confidence:{" "}
+                              {formatPercent(itemInputConfidence)}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                              Model
+                            </p>
+                            <p className="mt-2 text-sm text-zinc-700">
+                              {itemModel}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              Explanation: {itemExplanation}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                              Quality
+                            </p>
+                            <p className="mt-2 text-sm text-zinc-700">
+                              {itemQuality}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              {itemQualityReason}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                              OOD check
+                            </p>
+                            <p className="mt-2 text-sm text-zinc-700">
+                              {itemOod}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              {itemOodMethod}
+                            </p>
+                          </div>
+                        </div>
+
+                        {itemWarnings.length > 0 ? (
+                          <div className="mt-5">
+                            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                              Warnings
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {itemWarnings.map((warning, warningIndex) => (
+                                <span
+                                  key={`${warning}-${warningIndex}`}
+                                  className="inline-flex items-center gap-2 rounded-md bg-red-50 px-3 py-1.5 text-xs text-red-700 ring-1 ring-red-100"
+                                >
+                                  <AlertTriangle size={12} />
+                                  {warning}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {itemResult ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResult(itemResult);
+                              setConfirmedRoute("");
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            className="mt-5 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
+                          >
+                            Open full individual review
+                          </button>
+                        ) : null}
+
+                        {item.status === "failed" ? (
+                          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+                            {item.error || "This batch item failed."}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div>
+                        <p className="mb-3 text-xs uppercase tracking-[0.16em] text-zinc-400">
+                          Focus map
+                        </p>
+
+                        {itemHeatmapUrl ? (
+                          <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-zinc-50">
+                            <img
+                              src={itemHeatmapUrl}
+                              alt={`Focus map for ${item.filename}`}
+                              className="h-auto w-full object-cover"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex min-h-[160px] items-center justify-center rounded-[14px] border border-zinc-200 bg-zinc-50 text-xs text-zinc-400">
+                            No heatmap
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
       </div>
 
       <footer id="contact" className="mt-16 border-t border-zinc-200 bg-[#F7F7F4]">
@@ -1285,7 +2006,7 @@ export default function Home() {
           <div>
             <div className="mb-3 inline-flex items-center gap-2 text-zinc-900">
               <ShieldPlus size={18} className="text-red-500" />
-              <span className="font-semibold">MedAIx</span>
+              <span className="font-semibold">Governed Medical Image Analysis</span>
             </div>
             <p className="text-sm leading-7 text-zinc-600">
               A research-use assistant for careful, non-diagnostic medical image
