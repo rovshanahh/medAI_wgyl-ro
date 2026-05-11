@@ -289,8 +289,11 @@ class Orchestrator:
             ),
             "ensemble_member_count": inference_result.get("ensemble_member_count"),
             "mc_passes": inference_result.get("mc_passes"),
+            "model_id": inference_result.get("model_id"),
+            "model_version": inference_result.get("model_version"),
             "model_cache_key": inference_result.get("model_cache_key"),
             "device": inference_result.get("device"),
+            "features": inference_result.get("features"),
         }
 
     def _selected_model_payload(self, selected_model) -> dict:
