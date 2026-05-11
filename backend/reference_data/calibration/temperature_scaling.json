@@ -1,0 +1,33 @@
+{
+  "default_temperature": 1.0,
+  "models": {
+    "abdomen_ct_resnet18": {
+      "temperature": 1.15,
+      "method": "posthoc_temperature_scaling_mvp"
+    },
+    "brain_mri_resnet18": {
+      "temperature": 1.20,
+      "method": "posthoc_temperature_scaling_mvp"
+    },
+    "bone_xray_standard": {
+      "temperature": 1.10,
+      "method": "posthoc_temperature_scaling_mvp"
+    },
+    "breast_mammography_resnet18": {
+      "temperature": 1.25,
+      "method": "posthoc_temperature_scaling_mvp"
+    },
+    "chest_xray_mvp": {
+      "temperature": 1.10,
+      "method": "posthoc_temperature_scaling_mvp"
+    },
+    "retina_fundus_resnet18": {
+      "temperature": 1.20,
+      "method": "posthoc_temperature_scaling_mvp"
+    },
+    "skin_dermoscopy_resnet18": {
+      "temperature": 1.20,
+      "method": "posthoc_temperature_scaling_mvp"
+    }
+  }
+}

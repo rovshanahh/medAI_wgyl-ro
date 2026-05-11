@@ -293,6 +293,7 @@ class Orchestrator:
             "model_version": inference_result.get("model_version"),
             "model_cache_key": inference_result.get("model_cache_key"),
             "device": inference_result.get("device"),
+            "calibration": inference_result.get("calibration", {}),
             "features": inference_result.get("features"),
         }
 

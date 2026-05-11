@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from threading import Lock
 
 import numpy as np
@@ -72,9 +73,40 @@ ABDOMEN_CT_LABELS = [
 CHEST_REPO_ID = "itsomk/chexpert-densenet121"
 CHEST_FILENAME = "pytorch_model.safetensors"
 
+CALIBRATION_PATH = Path("reference_data/calibration/temperature_scaling.json")
+
 
 _MODEL_CACHE: dict[str, dict] = {}
 _MODEL_CACHE_LOCK = Lock()
+
+
+
+def load_temperature_config() -> dict:
+    if not CALIBRATION_PATH.exists():
+        return {
+            "default_temperature": 1.0,
+            "models": {},
+        }
+
+    try:
+        return json.loads(CALIBRATION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {
+            "default_temperature": 1.0,
+            "models": {},
+        }
+
+
+def safe_temperature(value) -> float:
+    try:
+        temperature = float(value)
+    except Exception:
+        return 1.0
+
+    if temperature <= 0:
+        return 1.0
+
+    return max(0.05, min(10.0, temperature))
 
 
 def get_device() -> torch.device:
@@ -394,6 +426,9 @@ class EnsembleModel:
         self.model_metadata = model_metadata
         self.mc_passes = mc_passes
         self.device = get_device()
+        self.temperature_config = load_temperature_config()
+        self.temperature = self._load_temperature()
+        self.calibration_method = self._load_calibration_method()
 
         cached = self._get_or_load_cached_model()
 
@@ -419,6 +454,28 @@ class EnsembleModel:
 
     def _version(self) -> str:
         return str(getattr(self.model_metadata, "version", "unknown_version") or "unknown_version")
+
+    def _load_temperature(self) -> float:
+        model_id = self._model_id()
+        default_temperature = self.temperature_config.get("default_temperature", 1.0)
+        model_config = self.temperature_config.get("models", {}).get(model_id, {})
+        return safe_temperature(model_config.get("temperature", default_temperature))
+
+    def _load_calibration_method(self) -> str:
+        model_id = self._model_id()
+        model_config = self.temperature_config.get("models", {}).get(model_id, {})
+        return str(model_config.get("method", "none"))
+
+    def _calibration_payload(self) -> dict:
+        return {
+            "enabled": self.temperature != 1.0,
+            "method": self.calibration_method,
+            "temperature": float(self.temperature),
+            "config_path": str(CALIBRATION_PATH),
+        }
+
+    def _apply_temperature(self, logits: torch.Tensor) -> torch.Tensor:
+        return logits / self.temperature
 
     def _cache_key(self) -> str:
         return f"{self._model_id()}:{self._version()}:{self.device.type}"
@@ -552,6 +609,7 @@ class EnsembleModel:
             "model_version": self._version(),
             "model_cache_key": self.model_cache_key,
             "device": self.device.type,
+            "calibration": self._calibration_payload(),
             "features": feature_vector.tolist() if feature_vector is not None else None,
         }
 
@@ -564,7 +622,8 @@ class EnsembleModel:
 
             for i in range(self.mc_passes):
                 logits, features = self.model.forward_with_mc_dropout(tensor)
-                probs = torch.sigmoid(logits).squeeze(0).detach().cpu().numpy()
+                calibrated_logits = self._apply_temperature(logits)
+                probs = torch.sigmoid(calibrated_logits).squeeze(0).detach().cpu().numpy()
                 mc_probs.append(probs)
 
                 if i == 0:
@@ -615,7 +674,8 @@ class EnsembleModel:
 
             for i in range(self.mc_passes):
                 logits, features = self.model.forward_with_mc_dropout(tensor)
-                abnormal_prob = float(torch.sigmoid(logits).squeeze().detach().cpu().item())
+                calibrated_logits = self._apply_temperature(logits)
+                abnormal_prob = float(torch.sigmoid(calibrated_logits).squeeze().detach().cpu().item())
                 normal_prob = 1.0 - abnormal_prob
                 mc_probs.append([normal_prob, abnormal_prob])
 
@@ -656,7 +716,8 @@ class EnsembleModel:
 
             for i in range(self.mc_passes):
                 logits, features = self.model.forward_with_mc_dropout(tensor)
-                probs = torch.softmax(logits, dim=1).squeeze(0).detach().cpu().numpy()
+                calibrated_logits = self._apply_temperature(logits)
+                probs = torch.softmax(calibrated_logits, dim=1).squeeze(0).detach().cpu().numpy()
                 mc_probs.append(probs)
 
                 if i == 0:
