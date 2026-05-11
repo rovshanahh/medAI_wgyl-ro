@@ -7,25 +7,29 @@ import torch.nn.functional as F
 
 class OODDetector:
     """
-    SBDDM-inspired MVP OOD detector.
+    SBDM-inspired MVP OOD detector.
 
-    This is not a full trained diffusion model. It is a lightweight score-based
-    diffusion-style stability detector using 5 noise/denoising steps, combined
-    with optional route-specific feature reference statistics.
+    This is not a full trained diffusion model. It is a practical lightweight
+    detector that combines:
+    - basic tensor validity checks
+    - 5-step diffusion-style perturbation stability scoring
+    - optional route-specific feature-distance scoring
 
-    Output tiers:
-    - IN_DISTRIBUTION
-    - NEAR_OOD
-    - HARD_OOD
+    Important:
+    Feature-distance OOD is only enabled when there are enough reference
+    feature vectors for that route. With too few reference samples, it can
+    falsely reject valid medical images.
     """
 
     def __init__(
         self,
         stats_path: str = "reference_data/ood/feature_stats.json",
         diffusion_steps: int = 5,
+        minimum_feature_reference_count: int = 5,
     ):
         self.stats_path = Path(stats_path)
         self.diffusion_steps = diffusion_steps
+        self.minimum_feature_reference_count = minimum_feature_reference_count
         self.feature_stats = self._load_feature_stats()
 
     def _load_feature_stats(self) -> dict:
@@ -48,12 +52,14 @@ class OODDetector:
         has_nan = bool(torch.isnan(tensor).any().item())
         has_inf = bool(torch.isinf(tensor).any().item())
 
-        tensor_std = float(tensor.detach().float().std().cpu().item())
-        tensor_mean = float(tensor.detach().float().mean().cpu().item())
+        tensor_float = tensor.detach().float()
+        tensor_std = float(tensor_float.std(unbiased=False).cpu().item())
+        tensor_mean = float(tensor_float.mean().cpu().item())
 
         failed = has_nan or has_inf or tensor_std < 1e-6
 
         reason = "Basic tensor check passed."
+
         if has_nan:
             reason = "Tensor contains NaN values."
         elif has_inf:
@@ -74,13 +80,13 @@ class OODDetector:
 
     def _diffusion_stability_score(self, tensor: torch.Tensor) -> dict:
         """
-        Lightweight 5-step diffusion-style perturbation stability scoring.
+        Five-step diffusion-style perturbation stability check.
 
-        The idea:
-        - Add increasing Gaussian noise.
-        - Apply simple denoising with average pooling.
-        - Measure reconstruction instability.
-        - Higher score means more unstable / more suspicious.
+        The image tensor is perturbed with increasing Gaussian noise, then
+        softly denoised with average pooling. The average reconstruction
+        difference is used as an instability score.
+
+        Higher score = more suspicious.
         """
 
         x = tensor.detach().float().cpu()
@@ -96,7 +102,6 @@ class OODDetector:
 
         for step in range(1, self.diffusion_steps + 1):
             noise_scale = 0.03 * step
-
             noise = torch.randn_like(x) * noise_scale
             noisy = x + noise
 
@@ -133,6 +138,23 @@ class OODDetector:
                 "metrics": {},
             }
 
+        reference_count = int(route_stats.get("count", 0))
+
+        if reference_count < self.minimum_feature_reference_count:
+            return {
+                "available": False,
+                "score": None,
+                "reason": (
+                    "Feature-based OOD was skipped because fewer than "
+                    f"{self.minimum_feature_reference_count} route-specific reference "
+                    "feature vectors are available."
+                ),
+                "metrics": {
+                    "reference_count": reference_count,
+                    "minimum_required": self.minimum_feature_reference_count,
+                },
+            }
+
         features = inference_result.get("features")
 
         if not features:
@@ -140,14 +162,16 @@ class OODDetector:
                 "available": False,
                 "score": None,
                 "reason": "Feature-based OOD was skipped because inference features are unavailable.",
-                "metrics": {},
+                "metrics": {
+                    "reference_count": reference_count,
+                },
             }
 
         feature_tensor = torch.tensor(features, dtype=torch.float32)
         mean_tensor = torch.tensor(route_stats["mean"], dtype=torch.float32)
         std_tensor = torch.tensor(route_stats["std"], dtype=torch.float32)
 
-        std_tensor = torch.clamp(std_tensor, min=1e-6)
+        std_tensor = torch.clamp(std_tensor, min=1e-3)
 
         if feature_tensor.shape != mean_tensor.shape:
             return {
@@ -157,6 +181,7 @@ class OODDetector:
                 "metrics": {
                     "feature_shape": list(feature_tensor.shape),
                     "mean_shape": list(mean_tensor.shape),
+                    "reference_count": reference_count,
                 },
             }
 
@@ -173,6 +198,7 @@ class OODDetector:
                 "max_z": max_z,
                 "threshold_near": route_stats.get("threshold_near"),
                 "threshold_hard": route_stats.get("threshold_hard"),
+                "reference_count": reference_count,
             },
         }
 
@@ -190,27 +216,34 @@ class OODDetector:
                 "reason": basic_check["reason"],
             }
 
-        diffusion_score = diffusion_result["score"]
+        diffusion_score = float(diffusion_result["score"])
 
-        diffusion_near_threshold = 0.65
-        diffusion_hard_threshold = 0.90
+        diffusion_near_threshold = 0.75
+        diffusion_hard_threshold = 1.10
 
-        feature_available = feature_result.get("available", False)
+        feature_available = bool(feature_result.get("available", False))
         feature_score = feature_result.get("score")
 
-        if feature_available:
+        if feature_available and feature_score is not None:
             route_stats = self.feature_stats.get(route_label, {})
+
             feature_near_threshold = float(route_stats.get("threshold_near", 2.5))
             feature_hard_threshold = float(route_stats.get("threshold_hard", 4.0))
 
-            if feature_score >= feature_hard_threshold or diffusion_score >= diffusion_hard_threshold:
+            if (
+                float(feature_score) >= feature_hard_threshold
+                or diffusion_score >= diffusion_hard_threshold
+            ):
                 return {
                     "tier": "HARD_OOD",
                     "is_hard_ood": True,
                     "reason": "Input is far from route-specific feature statistics or unstable under diffusion-style scoring.",
                 }
 
-            if feature_score >= feature_near_threshold or diffusion_score >= diffusion_near_threshold:
+            if (
+                float(feature_score) >= feature_near_threshold
+                or diffusion_score >= diffusion_near_threshold
+            ):
                 return {
                     "tier": "NEAR_OOD",
                     "is_hard_ood": False,
@@ -242,7 +275,8 @@ class OODDetector:
             "is_hard_ood": False,
             "reason": (
                 "Basic tensor and five-step diffusion-style OOD checks passed. "
-                "Feature-based OOD was skipped unless route-specific feature statistics are available."
+                "Feature-based OOD was skipped unless enough route-specific "
+                "reference feature statistics are available."
             ),
         }
 
@@ -266,10 +300,10 @@ class OODDetector:
             route_label=route_label,
         )
 
-        score = diffusion_result["score"]
+        score = float(diffusion_result["score"])
 
         if feature_result.get("available") and feature_result.get("score") is not None:
-            score = max(float(score), float(feature_result["score"]) / 5.0)
+            score = max(score, float(feature_result["score"]) / 5.0)
 
         return {
             "tier": decision["tier"],
@@ -283,5 +317,6 @@ class OODDetector:
                 "diffusion_step_errors": diffusion_result["step_errors"],
                 "basic_tensor_check": basic_check["metrics"],
                 "feature_distance": feature_result,
+                "feature_distance_minimum_reference_count": self.minimum_feature_reference_count,
             },
         }
