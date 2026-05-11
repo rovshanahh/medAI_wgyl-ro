@@ -93,6 +93,17 @@ type AnalysisResponse = {
     probabilities?: Record<string, number>;
     reliability_score?: number;
     disagreement_score?: number;
+    uncertainty_method?: string;
+    deep_ensemble_enabled?: boolean;
+    uncertainty_note?: string;
+    ensemble_member_count?: number;
+    mc_passes?: number;
+    calibration?: {
+      enabled?: boolean;
+      method?: string;
+      temperature?: number;
+      config_path?: string;
+    };
   };
   explainability?: {
     method?: string | null;
@@ -686,6 +697,12 @@ export default function Home() {
         ["Model output", modelOutput],
         ["Output confidence", confidence],
         ["Input confidence", routeConfidence],
+        ["Uncertainty method", result.inference?.uncertainty_method || "—"],
+        ["Deep ensemble enabled", result.inference?.deep_ensemble_enabled ? "Yes" : "No"],
+        ["MC dropout passes", String(result.inference?.mc_passes ?? "—")],
+        ["Ensemble members", String(result.inference?.ensemble_member_count ?? "—")],
+        ["Calibration method", result.inference?.calibration?.method || "—"],
+        ["Temperature", String(result.inference?.calibration?.temperature ?? "—")],
         ["Manual override used", manualOverride],
         ["Quality status", result.quality?.status || "—"],
         ["Quality note", result.quality?.reason || "—"],
@@ -1687,8 +1704,51 @@ export default function Home() {
                           {formatNumber(result.inference?.disagreement_score)}
                         </p>
                       </div>
+
+                      <div>
+                        <p>
+                          Uncertainty method:{" "}
+                          {formatLabel(result.inference?.uncertainty_method)}
+                        </p>
+                        <p>
+                          MC passes: {result.inference?.mc_passes ?? "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p>
+                          Deep ensemble enabled:{" "}
+                          {result.inference?.deep_ensemble_enabled ? "Yes" : "No"}
+                        </p>
+                        <p>
+                          Ensemble members:{" "}
+                          {result.inference?.ensemble_member_count ?? "—"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p>
+                          Calibration:{" "}
+                          {result.inference?.calibration?.enabled ? "Enabled" : "Not applied"}
+                        </p>
+                        <p>
+                          Temperature:{" "}
+                          {result.inference?.calibration?.temperature ?? "—"}
+                        </p>
+                      </div>
                     </div>
                   </div>
+
+                  {result.inference?.uncertainty_note ? (
+                    <div className="mt-10 rounded-[18px] bg-zinc-50 px-4 py-4 text-sm text-zinc-600 ring-1 ring-zinc-200">
+                      <p className="font-medium text-zinc-900">
+                        Uncertainty note
+                      </p>
+                      <p className="mt-2 leading-6">
+                        {result.inference.uncertainty_note}
+                      </p>
+                    </div>
+                  ) : null}
 
                   <div className="mt-10 border-t border-zinc-200 pt-6">
                     <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">

@@ -53,6 +53,16 @@ type AnalysisResponse = {
     top_label?: string;
     top_probability?: number;
     probabilities?: Record<string, number>;
+    uncertainty_method?: string;
+    deep_ensemble_enabled?: boolean;
+    uncertainty_note?: string;
+    ensemble_member_count?: number;
+    mc_passes?: number;
+    calibration?: {
+      enabled?: boolean;
+      method?: string;
+      temperature?: number;
+    };
   };
   explainability?: {
     method?: string | null;
@@ -484,6 +494,31 @@ export default function DemoPage() {
                       <p className="mt-1 text-sm text-zinc-500">
                         Region: {result.detection?.region || "—"} · Modality:{" "}
                         {result.detection?.modality || "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                        Uncertainty
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-zinc-900">
+                        {formatLabel(result.inference?.uncertainty_method)}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        MC passes: {result.inference?.mc_passes ?? "—"} · Ensemble:{" "}
+                        {result.inference?.deep_ensemble_enabled ? "Yes" : "No"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                        Calibration
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-zinc-900">
+                        {result.inference?.calibration?.enabled ? "Enabled" : "Not applied"}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-500">
+                        Temperature: {result.inference?.calibration?.temperature ?? "—"}
                       </p>
                     </div>
 
