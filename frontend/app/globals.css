@@ -24,3 +24,44 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+
+@keyframes softFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes softFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.motion-fade-up {
+  animation: softFadeUp 0.55s ease-out both;
+}
+
+.motion-fade-up-slow {
+  animation: softFadeUp 0.75s ease-out both;
+}
+
+.motion-float {
+  animation: softFloat 4.5s ease-in-out infinite;
+}
+
+.motion-hover-lift {
+  transition: transform 0.22s ease, color 0.22s ease, background-color 0.22s ease, border-color 0.22s ease;
+}
+
+.motion-hover-lift:hover {
+  transform: translateY(-3px);
+}

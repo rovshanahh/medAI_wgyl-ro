@@ -2,6 +2,8 @@
 
 import { ChangeEvent, useMemo, useState } from "react";
 import Link from "next/link";
+import SiteHeader from "./_components/SiteHeader";
+import SiteFooter from "./_components/SiteFooter";
 import {
   ArrowRight,
   CircleHelp,
@@ -699,52 +701,12 @@ export default function ReviewPage() {
       className="relative min-h-screen overflow-hidden bg-[#fffaf3] text-slate-950"
       style={{ fontFamily: '"Aptos","Aptos Body","Segoe UI",Arial,sans-serif' }}
     >
-      <div className="pointer-events-none absolute right-0 top-0 h-80 w-80 rounded-full bg-pink-300/35 blur-3xl" />
+      <div className="pointer-events-none motion-float absolute right-0 top-0 h-80 w-80 rounded-full bg-pink-300/35 blur-3xl" />
       <div className="pointer-events-none absolute bottom-10 left-8 h-80 w-80 rounded-full bg-sky-300/35 blur-3xl" />
 
       <div className="relative mx-auto max-w-7xl px-6 py-6">
-        <header className="flex items-center justify-between border-b border-slate-300 pb-5">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="relative h-10 w-14">
-              <span className="absolute left-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-slate-950" />
-              <span className="absolute right-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-slate-950" />
-              <span className="absolute left-1/2 top-1/2 h-[2px] w-7 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-400" />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.25em] text-slate-500">
-                Gentle research-use review
-              </p>
-              <h1 className="text-xl font-semibold">
-                Governed Medical Image Analysis
-              </h1>
-            </div>
-          </Link>
-
-          <nav className="flex flex-wrap items-center gap-5 text-sm text-slate-600">
-            <Link href="/" className="inline-flex items-center gap-2 transition hover:text-red-500">
-              <Home size={16} />
-              Home
-            </Link>
-            <Link href="/demo" className="inline-flex items-center gap-2 transition hover:text-red-500">
-              <Play size={16} />
-              Demo
-            </Link>
-            <Link href="/workspace" className="inline-flex items-center gap-2 transition hover:text-red-500">
-              <LayoutDashboard size={16} />
-              Workspace
-            </Link>
-            <Link href="/about" className="inline-flex items-center gap-2 transition hover:text-red-500">
-              <CircleHelp size={16} />
-              About
-            </Link>
-            <Link href="/contact" className="inline-flex items-center gap-2 transition hover:text-red-500">
-              <Mail size={16} />
-              Contact
-            </Link>
-          </nav>
-        </header>
-
-        <section className="grid gap-10 py-8 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <SiteHeader active="home" />
+        <section className="grid gap-10 py-8 lg:grid-cols-[320px_minmax(0,1fr)] motion-fade-up-slow">
           <aside>
             <label className="group block cursor-pointer border-y border-slate-300 py-6 transition hover:border-red-400">
               <div className="flex items-start justify-between gap-5">
@@ -793,7 +755,7 @@ export default function ReviewPage() {
                 type="button"
                 onClick={() => runAnalyze()}
                 disabled={loading}
-                className="group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white disabled:opacity-60"
+                className="group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition motion-hover-lift hover:bg-red-500 hover:text-white disabled:opacity-60"
               >
                 <span>{loading ? "Reviewing carefully..." : "Start guided review"}</span>
                 <ArrowRight size={17} className="transition group-hover:translate-x-1" />
@@ -802,7 +764,7 @@ export default function ReviewPage() {
               <button
                 type="button"
                 onClick={handleReset}
-                className="group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white"
+                className="group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition motion-hover-lift hover:bg-red-500 hover:text-white"
               >
                 <span>Clear and start over</span>
                 <RefreshCcw size={17} className="transition group-hover:rotate-[-20deg]" />
@@ -842,7 +804,7 @@ export default function ReviewPage() {
                 type="button"
                 onClick={handleAnalyzeBatch}
                 disabled={batchLoading}
-                className="mt-4 group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white disabled:opacity-60"
+                className="mt-4 group flex w-full items-center justify-between rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition motion-hover-lift hover:bg-red-500 hover:text-white disabled:opacity-60"
               >
                 <span>{batchLoading ? "Running batch..." : "Run batch review"}</span>
                 <ArrowRight size={17} className="transition group-hover:translate-x-1" />
@@ -939,7 +901,7 @@ export default function ReviewPage() {
                     type="button"
                     onClick={() => runAnalyze(confirmedRoute)}
                     disabled={overrideLoading}
-                    className="w-fit rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-500 hover:text-white disabled:opacity-60"
+                    className="w-fit rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-semibold text-red-700 transition motion-hover-lift hover:bg-red-500 hover:text-white disabled:opacity-60"
                   >
                     {overrideLoading ? "Running..." : "Run confirmed route"}
                   </button>
@@ -1279,58 +1241,7 @@ export default function ReviewPage() {
           </section>
         </section>
 
-        <footer className="mt-14 border-t border-slate-300 py-8">
-          <div className="grid gap-8 md:grid-cols-3">
-            <div>
-              <div className="mb-3 flex items-center gap-3">
-                <div className="relative h-8 w-12">
-                  <span className="absolute left-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-slate-950" />
-                  <span className="absolute right-1 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-slate-950" />
-                  <span className="absolute left-1/2 top-1/2 h-[2px] w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-400" />
-                </div>
-                <p className="font-semibold text-slate-950">
-                  Governed Medical Image Analysis
-                </p>
-              </div>
-              <p className="max-w-md text-sm leading-7 text-slate-500">
-                A gentle research-use assistant for careful, non-diagnostic medical image review.
-              </p>
-            </div>
-
-            <div>
-              <p className="mb-3 text-sm font-semibold text-slate-950">Quick links</p>
-              <div className="space-y-2 text-sm text-slate-600">
-                <Link href="/" className="flex items-center gap-2 hover:text-red-500">
-                  <Home size={15} />
-                  Home
-                </Link>
-                <Link href="/demo" className="flex items-center gap-2 hover:text-red-500">
-                  <Play size={15} />
-                  Demo
-                </Link>
-                <Link href="/workspace" className="flex items-center gap-2 hover:text-red-500">
-                  <LayoutDashboard size={15} />
-                  Workspace
-                </Link>
-                <Link href="/about" className="flex items-center gap-2 hover:text-red-500">
-                  <CircleHelp size={15} />
-                  About
-                </Link>
-              </div>
-            </div>
-
-            <div>
-              <div className="mb-3 flex items-center gap-2">
-                <ShieldCheck size={16} className="text-red-500" />
-                <p className="text-sm font-semibold text-slate-950">Notice</p>
-              </div>
-              <p className="text-xs leading-6 text-slate-500">
-                <span className="font-semibold text-slate-700">Research-use only.</span>{" "}
-                Outputs are non-diagnostic and must not be used for clinical decision-making.
-              </p>
-            </div>
-          </div>
-        </footer>
+        <SiteFooter />
       </div>
     </main>
   );

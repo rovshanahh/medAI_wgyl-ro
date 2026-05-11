@@ -1,252 +1,146 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "framer-motion";
+import SiteHeader from "../_components/SiteHeader";
+import SiteFooter from "../_components/SiteFooter";
 import {
+  ArrowRight,
   CircleHelp,
-  House,
+  Home,
   LayoutDashboard,
   Mail,
   MapPin,
-  Phone,
-  ShieldPlus,
+  Play,
+  ShieldCheck,
 } from "lucide-react";
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 10 },
-  show: { opacity: 1, y: 0 },
-};
 
 export default function ContactPage() {
   return (
     <main
-      className="min-h-screen bg-[#FBF8F3] text-zinc-900"
+      className="relative min-h-screen overflow-hidden bg-[#fffaf3] text-slate-950"
       style={{ fontFamily: '"Aptos","Aptos Body","Segoe UI",Arial,sans-serif' }}
     >
-      <div className="mx-auto max-w-7xl px-6 py-6">
-        <nav className="mb-10 flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-[0_8px_24px_rgba(0,0,0,0.04)] ring-1 ring-black/5">
-              <div className="relative h-4 w-7">
-                <span className="absolute left-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500" />
-                <span className="absolute right-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-red-500" />
-                <span className="absolute left-1/2 top-1/2 h-[2px] w-4 -translate-x-1/2 -translate-y-1/2 bg-red-400" />
-              </div>
-            </div>
+      <div className="pointer-events-none motion-float absolute -right-40 -top-40 h-[480px] w-[480px] rounded-full bg-red-100/70 blur-3xl" />
+      <div className="pointer-events-none absolute -left-44 top-[520px] h-[480px] w-[480px] rounded-full bg-sky-100/70 blur-3xl" />
 
+      <div className="relative mx-auto max-w-7xl px-6 py-6">
+        <SiteHeader active="contact" />
+
+        <section className="grid min-h-[430px] gap-12 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center motion-fade-up-slow">
+          <div>
+            <p className="text-xs uppercase tracking-[0.28em] text-red-500">
+              Project communication
+            </p>
+
+            <h2 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight tracking-tight">
+              Send questions, feedback, or demo notes.
+            </h2>
+
+            <p className="mt-6 max-w-2xl text-sm italic leading-7 text-slate-500">
+              Use this page for academic communication about the prototype, UI,
+              workflow, safety behavior, or implementation choices.
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <a
+                href="mailto:research@medaix.ai"
+                className="group inline-flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-semibold text-red-700 transition motion-hover-lift hover:bg-red-500 hover:text-white"
+              >
+                Email project team
+                <ArrowRight size={17} className="transition group-hover:translate-x-1" />
+              </a>
+
+              <Link
+                href="/demo"
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 px-5 py-4 text-sm font-semibold text-slate-700 transition motion-hover-lift hover:border-red-300 hover:text-red-500"
+              >
+                Open demo
+                <Play size={17} />
+              </Link>
+            </div>
+          </div>
+
+          <aside className="space-y-10">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-400">
-                Research-use platform
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                Email
               </p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-tight">MedAIx</h1>
+              <a
+                href="mailto:research@medaix.ai"
+                className="mt-2 block text-2xl font-semibold text-slate-900 transition hover:text-red-500"
+              >
+                research@medaix.ai
+              </a>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Best for project questions, demo review, and academic feedback.
+              </p>
             </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-5 text-sm text-zinc-600">
-            <Link href="/" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
-              <House size={16} />
-              Home
-            </Link>
-
-            <Link href="/workspace" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
-              <LayoutDashboard size={16} />
-              Workspace
-            </Link>
-
-            <Link href="/about" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
-              <CircleHelp size={16} />
-              About
-            </Link>
-
-            <Link href="/contact" className="inline-flex items-center gap-2 transition hover:text-zinc-900">
-              <Mail size={16} />
-              Contact
-            </Link>
-          </div>
-        </nav>
-
-        <motion.section
-          className="mb-14 grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-end"
-          initial="hidden"
-          animate="show"
-          transition={{ staggerChildren: 0.1 }}
-        >
-          <div>
-            <motion.div
-              variants={fadeUp}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="mb-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs text-zinc-600 shadow-[0_6px_20px_rgba(0,0,0,0.03)]"
-            >
-              <Mail size={15} className="text-red-500" />
-              Contact
-            </motion.div>
-
-            <motion.h2
-              variants={fadeUp}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="text-3xl font-semibold tracking-tight sm:text-4xl"
-            >
-              Contact information for MedAIx.
-            </motion.h2>
-
-            <motion.p
-              variants={fadeUp}
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="mt-5 max-w-2xl text-base leading-8 text-zinc-600"
-            >
-              For project-related communication, research inquiries, or general
-              feedback, please use the contact details below.
-            </motion.p>
-          </div>
-
-          <motion.div
-            variants={fadeUp}
-            transition={{ duration: 0.4, ease: "easeOut" }}
-            className="text-sm leading-7 text-zinc-600"
-          >
-            <p>Project communication</p>
-            <p>Research inquiries</p>
-            <p>General feedback</p>
-          </motion.div>
-        </motion.section>
-
-        <section className="mb-14 grid gap-10 md:grid-cols-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-              Email
-            </p>
-            <div className="mt-3 flex items-start gap-3">
-              <Mail size={18} className="mt-1 text-red-500" />
+            <div className="grid gap-8 sm:grid-cols-2">
               <div>
-                <h3 className="text-lg font-semibold text-zinc-900">Primary contact</h3>
-                <a
-                  href="mailto:research@medaix.ai"
-                  className="mt-2 block text-sm text-zinc-700 hover:text-zinc-900"
-                >
-                  research@medaix.ai
-                </a>
+                <MapPin size={18} className="text-red-500" />
+                <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
+                  Location
+                </p>
+                <p className="mt-2 text-sm text-slate-600">Ankara, Türkiye</p>
+              </div>
+
+              <div>
+                <ShieldCheck size={18} className="text-red-500" />
+                <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
+                  Scope
+                </p>
+                <p className="mt-2 text-sm text-slate-600">Research-use only</p>
               </div>
             </div>
+          </aside>
+        </section>
+
+        <section className="mt-10 grid gap-10 border-t border-slate-200 pt-8 md:grid-cols-[260px_minmax(0,1fr)]">
+          <div>
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
+              Helpful to include
+            </p>
+            <p className="mt-4 text-sm leading-7 text-slate-500">
+              Clear context makes feedback easier to understand.
+            </p>
           </div>
 
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-              Phone
-            </p>
-            <div className="mt-3 flex items-start gap-3">
-              <Phone size={18} className="mt-1 text-red-500" />
-              <div>
-                <h3 className="text-lg font-semibold text-zinc-900">Direct line</h3>
-                <p className="mt-2 text-sm text-zinc-700">+00 000 000 0000</p>
-              </div>
+          <div className="grid gap-8 md:grid-cols-3">
+            <div className="motion-hover-lift">
+              <Mail size={18} className="text-red-500" />
+              <h3 className="mt-3 text-base font-semibold text-slate-900">
+                Page or feature
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Mention Home, Demo, Workspace, report export, batch review, or audit.
+              </p>
             </div>
-          </div>
 
-          <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-              Location
-            </p>
-            <div className="mt-3 flex items-start gap-3">
-              <MapPin size={18} className="mt-1 text-red-500" />
-              <div>
-                <h3 className="text-lg font-semibold text-zinc-900">Base</h3>
-                <p className="mt-2 text-sm text-zinc-700">Ankara, Türkiye</p>
-              </div>
+            <div className="motion-hover-lift">
+              <Play size={18} className="text-red-500" />
+              <h3 className="mt-3 text-base font-semibold text-slate-900">
+                Demo case
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                If it is about demo behavior, include which scenario was run.
+              </p>
+            </div>
+
+            <div className="motion-hover-lift">
+              <CircleHelp size={18} className="text-red-500" />
+              <h3 className="mt-3 text-base font-semibold text-slate-900">
+                Expected result
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Say what felt unclear, incorrect, too dense, or missing.
+              </p>
             </div>
           </div>
         </section>
 
-        <section className="mb-14 border-t border-zinc-200 pt-6">
-          <div className="grid gap-8 md:grid-cols-2">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                Scope
-              </p>
-              <p className="mt-3 text-sm leading-7 text-zinc-700">
-                Communication related to the platform, prototype workflow, and
-                research use is welcome.
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">
-                Notice
-              </p>
-              <p className="mt-3 text-sm leading-7 text-zinc-700">
-                MedAIx is intended for research and educational use only and does
-                not provide clinical advice or diagnosis.
-              </p>
-            </div>
-          </div>
-        </section>
+        <SiteFooter />
       </div>
-
-      <footer id="contact" className="mt-16 border-t border-zinc-200 bg-[#F7F7F4]">
-        <div className="mx-auto grid max-w-7xl gap-10 px-6 py-10 md:grid-cols-3">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 text-zinc-900">
-              <ShieldPlus size={18} className="text-red-500" />
-              <span className="font-semibold">MedAIx</span>
-            </div>
-            <p className="text-sm leading-7 text-zinc-600">
-              Research-use assistant for careful, non-diagnostic review of medical images.
-            </p>
-          </div>
-
-          <div>
-            <h4 className="mb-3 text-sm font-semibold text-zinc-900">Quick links</h4>
-            <div className="space-y-2 text-sm text-zinc-600">
-              <Link href="/" className="inline-flex items-center gap-2 hover:text-zinc-900">
-                <House size={16} />
-                Home
-              </Link>
-              <br />
-              <Link href="/workspace" className="inline-flex items-center gap-2 hover:text-zinc-900">
-                <LayoutDashboard size={16} />
-                Workspace
-              </Link>
-              <br />
-              <Link href="/about" className="inline-flex items-center gap-2 hover:text-zinc-900">
-                <CircleHelp size={16} />
-                About
-              </Link>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="mb-3 text-sm font-semibold text-zinc-900">Contact</h4>
-            <div className="space-y-2 text-sm text-zinc-600">
-              <div className="inline-flex items-center gap-2">
-                <Mail size={16} />
-                <a href="mailto:research@medaix.ai" className="hover:text-zinc-900">
-                  research@medaix.ai
-                </a>
-              </div>
-              <br />
-              <div className="inline-flex items-center gap-2">
-                <Phone size={16} />
-                +00 000 000 0000
-              </div>
-              <br />
-              <div className="inline-flex items-center gap-2">
-                <MapPin size={16} />
-                Ankara, Türkiye
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t border-zinc-200 bg-white/70">
-          <div className="mx-auto max-w-7xl px-6 py-4">
-            <p className="text-xs leading-6 tracking-[0.01em] text-zinc-500">
-              <span className="font-semibold text-zinc-700">Important notice.</span>{" "}
-              This platform is intended solely for research and educational use. The
-              information presented here is non-diagnostic and must not be used for
-              clinical decision-making.
-            </p>
-          </div>
-        </div>
-      </footer>
     </main>
   );
 }
