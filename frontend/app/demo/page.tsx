@@ -318,202 +318,230 @@ export default function DemoPage() {
           </aside>
 
           <section>
+            <p className="text-sm text-slate-500">Assistant result</p>
+            <h2
+              className={`mt-3 text-3xl font-semibold tracking-tight ${getDecisionColor(
+                result?.policy?.action
+              )}`}
+            >
+              {getAssistantDecision(result?.policy?.action)}
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">
+              {getAssistantSummary(result, selectedRoute)}
+            </p>
+
             {!demoResult || !result ? (
-              <div className="flex min-h-[430px] flex-col justify-center motion-fade-up-slow">
-                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                  Review summary
-                </p>
-
-                <h3 className="mt-3 text-3xl font-semibold tracking-tight">
-                  Ready for demo review.
-                </h3>
-
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">
-                  The result will appear here in the same guided style as the main review page.
-                </p>
-
-                <div className="mt-9 grid max-w-2xl gap-7 sm:grid-cols-3">
-                  <InfoMini label="Step one" value="Choose case" />
-                  <InfoMini label="Step two" value="Run pipeline" />
-                  <InfoMini label="Step three" value="Review evidence" />
-                </div>
+              <div className="mt-8 grid max-w-2xl gap-5 sm:grid-cols-3 motion-fade-up-slow">
+                <InfoLine label="Step one" value="Choose case" />
+                <InfoLine label="Step two" value="Run pipeline" />
+                <InfoLine label="Step three" value="Review evidence" />
               </div>
             ) : (
               <div className="motion-fade-up-slow">
-                <section>
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                    Guided review result
+                <div className="mt-8">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Main output
                   </p>
-
-                  <h3 className="mt-3 text-3xl font-semibold tracking-tight">
+                  <p className="mt-2 text-4xl font-semibold tracking-tight">
                     {result.inference?.top_label || "No inference"}
-                  </h3>
-
-                  <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-                    {demoResult.title} · {demoResult.description}
                   </p>
+                  <p className="mt-2 text-sm text-slate-500">
+                    {result.inference?.top_label
+                      ? `Confidence: ${formatPercent(result.inference?.top_probability)}`
+                      : "The system stopped before producing a model output."}
+                  </p>
+                </div>
 
-                  <div className="mt-8 grid gap-7 md:grid-cols-4">
-                    <InfoMini label="Policy" value={result.policy?.action || "—"} />
-                    <InfoMini label="Risk" value={result.policy?.risk_category || "—"} />
-                    <InfoMini label="Route" value={formatLabel(selectedRoute)} />
-                    <InfoMini
-                      label="Accepted"
-                      value={result.input_gate?.accepted_for_analysis ? "Yes" : "No"}
-                    />
-                  </div>
-                </section>
-
-                <section className="mt-10 grid gap-8 md:grid-cols-2">
-                  <InfoMini
-                    label="Model output"
-                    value={result.inference?.top_label || "No inference"}
-                    helper={`Confidence: ${formatPercent(result.inference?.top_probability)}`}
+                <div className="mt-8 grid gap-5 md:grid-cols-3">
+                  <InfoLine
+                    label="Route"
+                    value={formatLabel(selectedRoute)}
+                    text={`Accepted: ${
+                      result.input_gate?.accepted_for_analysis ? "Yes" : "No"
+                    }`}
                   />
-                  <InfoMini
-                    label="Selected model"
+                  <InfoLine
+                    label="Safety"
+                    value={result.policy?.risk_category || "—"}
+                    text={`OOD: ${result.ood?.tier || "—"}`}
+                  />
+                  <InfoLine
+                    label="Model"
                     value={result.routing?.selected_model || "—"}
-                    helper={`Region: ${result.detection?.region || "—"} · Modality: ${
+                    text={`${result.detection?.region || "—"} / ${
                       result.detection?.modality || "—"
                     }`}
                   />
-                  <InfoMini
-                    label="Uncertainty"
-                    value={formatLabel(result.inference?.uncertainty_method)}
-                    helper={`MC passes: ${result.inference?.mc_passes ?? "—"} · Ensemble: ${
-                      result.inference?.deep_ensemble_enabled ? "Yes" : "No"
-                    }`}
-                  />
-                  <InfoMini
-                    label="OOD check"
-                    value={result.ood?.tier || "—"}
-                    helper={result.ood?.method || "—"}
-                  />
-                  <InfoMini
-                    label="Quality check"
-                    value={result.quality?.status || "—"}
-                    helper={result.quality?.reason || "—"}
-                  />
-                  <InfoMini
-                    label="Explanation target"
-                    value={
-                      result.explainability?.target_label ||
-                      result.inference?.top_label ||
-                      "—"
-                    }
-                    helper={`Method: ${result.explainability?.method || "—"}`}
-                  />
-                </section>
+                </div>
 
-                <section className="mt-10">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                    Policy reason
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-slate-600">
-                    {result.policy?.reason || result.message || "—"}
-                  </p>
-                </section>
-
-                {manualOverrideUsed ? (
-                  <section className="mt-8">
-                    <p className="text-sm font-semibold text-amber-800">
-                      Manual route confirmation was used.
-                    </p>
-                    <p className="mt-2 text-sm leading-7 text-amber-700">
-                      The original route detector result was preserved in the audit metadata.
-                    </p>
-                  </section>
-                ) : null}
-
-                {warnings.length > 0 ? (
-                  <section className="mt-8">
-                    <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                      Warnings
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      {warnings.map((warning, index) => (
-                        <span
-                          key={`${warning}-${index}`}
-                          className="text-xs font-medium text-red-600"
-                        >
-                          {warning}
-                        </span>
-                      ))}
-                    </div>
-                  </section>
-                ) : null}
-
-                <section className="mt-12">
-                  <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
-                    Visual evidence
+                <div className="mt-8 border-y border-slate-300 py-5">
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    Pipeline status
                   </p>
 
-                  <div className="mt-5 grid gap-8 lg:grid-cols-2">
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <PipelineStep label="Input validated" done={Boolean(result.input_gate)} />
+                    <PipelineStep label="Route selected" done={Boolean(selectedRoute && selectedRoute !== "—")} />
+                    <PipelineStep label="Model inference completed" done={Boolean(result.inference?.top_label)} />
+                    <PipelineStep label="Quality checked" done={Boolean(result.quality?.status)} />
+                    <PipelineStep label="OOD screened" done={Boolean(result.ood?.tier)} />
+                    <PipelineStep label="Focus map generated" done={Boolean(result.explainability?.heatmap_path)} />
+                    <PipelineStep label="Policy decision made" done={Boolean(result.policy?.action)} />
+                  </div>
+                </div>
+
+                <DecisionLegend />
+
+                <div className="mt-10">
+                  <div className="mb-4 flex items-end justify-between gap-4">
                     <div>
-                      <p className="mb-3 text-sm font-semibold text-slate-900">
-                        Original image
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                        Visual evidence
                       </p>
-                      <div className="flex min-h-[260px] items-center justify-center py-4">
+                      <p className="mt-1 text-sm text-slate-500">
+                        Original image and Grad-CAM++ focus map shown together.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    <div>
+                      <p className="mb-3 text-sm font-semibold">Original image</p>
+                      <div className="flex min-h-[280px] items-center justify-center border-y border-slate-300 py-5">
                         {inputImageUrl ? (
                           <img
                             src={inputImageUrl}
                             alt="Demo input"
-                            className="max-h-[320px] w-full object-contain"
+                            className="max-h-[340px] w-full object-contain"
                           />
                         ) : (
-                          <p className="text-center text-sm text-slate-400">
-                            DICOM input preview is unavailable in browser.
+                          <p className="text-sm text-slate-400">
+                            DICOM preview unavailable in browser.
                           </p>
                         )}
                       </div>
                     </div>
 
                     <div>
-                      <p className="mb-3 text-sm font-semibold text-slate-900">
+                      <p className="mb-3 text-sm font-semibold">
                         Where the model focused
                       </p>
-                      <div className="flex min-h-[260px] items-center justify-center py-4">
+                      <div className="flex min-h-[280px] items-center justify-center border-y border-slate-300 py-5">
                         {heatmapUrl ? (
                           <img
                             src={heatmapUrl}
                             alt="Demo heatmap"
-                            className="max-h-[320px] w-full object-contain"
+                            className="max-h-[340px] w-full object-contain"
                           />
                         ) : (
-                          <p className="text-center text-sm text-slate-400">
-                            Focus map unavailable because inference did not run.
+                          <p className="text-sm text-slate-400">
+                            Focus map unavailable.
                           </p>
                         )}
                       </div>
                     </div>
                   </div>
-                </section>
+                </div>
 
-                <details className="mt-10">
-                  <summary className="cursor-pointer text-sm font-semibold text-red-600">
-                    View technical audit
+                <details className="mt-8 border-y border-slate-300 py-5">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-slate-900">
+                    <span>
+                      Technical audit
+                      <span className="ml-2 text-xs font-normal text-slate-500">
+                        explained step by step
+                      </span>
+                    </span>
+                    <span className="text-xs font-medium text-red-500">
+                      Open details
+                    </span>
                   </summary>
 
-                  <div className="mt-5 text-sm leading-7 text-slate-500">
+                  <div className="mt-5 border-t border-slate-200 pt-5">
+                    <p className="mb-6 max-w-2xl text-sm leading-6 text-slate-600">
+                      This audit explains what happened behind the assistant result.
+                      It is useful for researchers, reviewers, and demo evaluators.
+                    </p>
+
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <InfoLine
+                        label="Policy reason"
+                        value={result.policy?.action || "—"}
+                        text={result.policy?.reason || result.message || "—"}
+                      />
+                      <InfoLine
+                        label="Quality"
+                        value={result.quality?.status || "—"}
+                        text={result.quality?.reason || "—"}
+                      />
+                      <InfoLine
+                        label="Uncertainty"
+                        value={formatLabel(result.inference?.uncertainty_method)}
+                        text={`MC passes: ${result.inference?.mc_passes ?? "—"} · Ensemble: ${
+                          result.inference?.deep_ensemble_enabled ? "Yes" : "No"
+                        }`}
+                      />
+                      <InfoLine
+                        label="Explainability"
+                        value={result.explainability?.method || "—"}
+                        text={`Target: ${
+                          result.explainability?.target_label ||
+                          result.inference?.top_label ||
+                          "—"
+                        }`}
+                      />
+                    </div>
+
                     {result.inference?.probabilities ? (
-                      <div className="space-y-2">
-                        {Object.entries(result.inference.probabilities).map(
-                          ([label, probability]) => (
-                            <div
-                              key={label}
-                              className="flex items-center justify-between gap-4"
-                            >
-                              <span>{label}</span>
-                              <span className="font-semibold text-slate-900">
-                                {formatPercent(probability)}
-                              </span>
-                            </div>
-                          )
-                        )}
+                      <div className="mt-7">
+                        <p className="mb-3 text-xs uppercase tracking-[0.18em] text-slate-500">
+                          Model probabilities
+                        </p>
+                        <div className="space-y-2 text-sm text-slate-600">
+                          {Object.entries(result.inference.probabilities).map(
+                            ([label, probability]) => (
+                              <div
+                                key={label}
+                                className="flex items-center justify-between gap-4"
+                              >
+                                <span>{label}</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatPercent(probability)}
+                                </span>
+                              </div>
+                            )
+                          )}
+                        </div>
                       </div>
-                    ) : (
-                      <p>No probability table was returned for this demo.</p>
-                    )}
+                    ) : null}
+
+                    {warnings.length > 0 ? (
+                      <div className="mt-7">
+                        <p className="mb-3 text-xs uppercase tracking-[0.18em] text-slate-500">
+                          Warnings
+                        </p>
+                        <div className="flex flex-wrap gap-3">
+                          {warnings.map((warning, index) => (
+                            <span
+                              key={`${warning}-${index}`}
+                              className="text-xs font-medium text-red-600"
+                            >
+                              {warning}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {manualOverrideUsed ? (
+                      <div className="mt-7">
+                        <p className="text-sm font-semibold text-amber-800">
+                          Manual route confirmation was used.
+                        </p>
+                        <p className="mt-2 text-sm leading-7 text-amber-700">
+                          The original route detector result was preserved in the audit metadata.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 </details>
               </div>
@@ -524,6 +552,95 @@ export default function DemoPage() {
         <SiteFooter />
       </div>
     </main>
+  );
+}
+
+function getAssistantDecision(action?: string) {
+  switch (action) {
+    case "ANSWER":
+      return "I can show the model output.";
+    case "ESCALATE":
+      return "This should be reviewed by a human expert.";
+    case "REQUEST_EVIDENCE":
+      return "I need better evidence before showing a result.";
+    case "REFUSE":
+      return "I should not show a model result for this input.";
+    case "STOP":
+      return "I stopped the review for safety.";
+    default:
+      return "Ready for demo review.";
+  }
+}
+
+function getDecisionColor(action?: string) {
+  switch (action) {
+    case "ANSWER":
+      return "text-slate-950";
+    case "ESCALATE":
+      return "text-amber-700";
+    case "REQUEST_EVIDENCE":
+      return "text-sky-700";
+    case "REFUSE":
+    case "STOP":
+      return "text-red-700";
+    default:
+      return "text-slate-950";
+  }
+}
+
+function getAssistantSummary(result?: AnalysisResponse, selectedRoute?: string) {
+  if (!result) {
+    return "Run one scenario to see the same guided summary style used on the main page.";
+  }
+
+  const action = result.policy?.action || "—";
+  const route = formatLabel(selectedRoute);
+  const risk = result.policy?.risk_category || "—";
+
+  return `Demo completed with policy action ${action}. Route: ${route}. Risk: ${risk}.`;
+}
+
+function InfoLine({
+  label,
+  value,
+  text,
+}: {
+  label: string;
+  value: string;
+  text?: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 text-base font-semibold text-slate-900">{value}</p>
+      {text ? <p className="mt-1 text-sm leading-6 text-slate-500">{text}</p> : null}
+    </div>
+  );
+}
+
+function PipelineStep({ label, done }: { label: string; done: boolean }) {
+  return (
+    <div className="flex items-center gap-3 text-sm text-slate-600">
+      <span
+        className={`h-2.5 w-2.5 rounded-full ${
+          done ? "bg-red-500" : "bg-slate-300"
+        }`}
+      />
+      {label}
+    </div>
+  );
+}
+
+function DecisionLegend() {
+  return (
+    <div className="mt-8 grid gap-4 text-sm text-slate-500 md:grid-cols-4">
+      <p><span className="font-semibold text-slate-900">Answer</span> → output can be shown</p>
+      <p><span className="font-semibold text-amber-700">Escalate</span> → expert review needed</p>
+      <p><span className="font-semibold text-sky-700">Request evidence</span> → better input needed</p>
+      <p><span className="font-semibold text-red-700">Stop</span> → unsafe to continue</p>
+    </div>
   );
 }
 
