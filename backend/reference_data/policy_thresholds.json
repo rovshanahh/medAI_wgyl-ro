@@ -1,12 +1,26 @@
 {
-    "version": "1.0.0",
-    "answer_threshold": 0.70,
-    "refusal_threshold": 0.80,
-    "escalation_threshold": 0.90,
-    "stop_threshold": 0.95,
-    "moderate_set_size": 3,
-    "high_set_size": 5,
-    "moderate_epistemic_threshold": 0.003,
-    "high_epistemic_threshold": 0.01,
-    "refuse_epistemic_threshold": 0.02
-  }
+  "version": "1.1.0",
+
+  "answer_threshold": 0.70,
+
+  "refuse_probability_threshold": 0.45,
+  "escalate_probability_threshold": 0.60,
+
+  "refuse_reliability_threshold": 0.60,
+  "escalate_reliability_threshold": 0.75,
+
+  "moderate_set_size": 2,
+  "high_set_size": 3,
+
+  "moderate_epistemic_threshold": 0.003,
+  "high_epistemic_threshold": 0.01,
+  "refuse_epistemic_threshold": 0.02,
+  "escalate_epistemic_threshold": 0.01,
+
+  "moderate_disagreement_threshold": 0.003,
+  "high_disagreement_threshold": 0.01,
+  "escalate_disagreement_threshold": 0.01,
+
+  "moderate_reliability_floor": 0.85,
+  "high_reliability_floor": 0.70
+}

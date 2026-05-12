@@ -305,12 +305,39 @@ class OODDetector:
         if feature_result.get("available") and feature_result.get("score") is not None:
             score = max(score, float(feature_result["score"]) / 5.0)
 
+        tier = decision["tier"]
+
+        if tier == "HARD_OOD":
+            user_message = (
+                "The input appears too far from the expected route distribution. "
+                "The system stopped or should not provide an automatic answer."
+            )
+            recommended_action = "STOP"
+        elif tier == "NEAR_OOD":
+            user_message = (
+                "The input is close to the distribution boundary. The result should be "
+                "reviewed carefully instead of treated as a confident automatic answer."
+            )
+            recommended_action = "ESCALATE"
+        else:
+            user_message = (
+                "The input did not trigger the current OOD rejection checks."
+            )
+            recommended_action = "CONTINUE"
+
         return {
-            "tier": decision["tier"],
+            "tier": tier,
             "score": float(score),
             "is_hard_ood": bool(decision["is_hard_ood"]),
             "reason": decision["reason"],
+            "user_message": user_message,
+            "recommended_action": recommended_action,
             "method": "sbdm_inspired_5_step_stability_plus_feature_distance",
+            "thresholds": {
+                "diffusion_near": 0.75,
+                "diffusion_hard": 1.10,
+                "minimum_feature_reference_count": self.minimum_feature_reference_count,
+            },
             "metrics": {
                 "diffusion_steps": self.diffusion_steps,
                 "diffusion_score": diffusion_result["score"],
