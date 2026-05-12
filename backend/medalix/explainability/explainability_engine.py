@@ -62,8 +62,11 @@ class ExplainabilityEngine:
         input_height = int(tensor.shape[-2])
         input_width = int(tensor.shape[-1])
 
-        rgb_image = original_image.convert("RGB").resize((input_width, input_height))
-        rgb_array = np.array(rgb_image).astype(np.float32) / 255.0
+        original_rgb = original_image.convert("RGB")
+        original_width, original_height = original_rgb.size
+
+        cam_base_image = original_rgb.resize((input_width, input_height))
+        cam_base_array = np.array(cam_base_image).astype(np.float32) / 255.0
 
         targets = self._resolve_cam_targets(tensor, inference_result)
 
@@ -74,21 +77,23 @@ class ExplainabilityEngine:
             )[0]
 
         visualization = show_cam_on_image(
-            rgb_array,
+            cam_base_array,
             grayscale_cam,
             use_rgb=True,
             image_weight=0.65,
+        )
+
+        heatmap_image = Image.fromarray(visualization)
+        heatmap_image = heatmap_image.resize(
+            (original_width, original_height),
+            resample=Image.Resampling.BILINEAR,
         )
 
         safe_name = Path(filename).stem.replace(" ", "_")
         heatmap_filename = f"{safe_name}_gradcampp.png"
         heatmap_path = self.output_dir / heatmap_filename
 
-        plt.figure(figsize=(6, 6))
-        plt.imshow(visualization)
-        plt.axis("off")
-        plt.savefig(heatmap_path, bbox_inches="tight", pad_inches=0)
-        plt.close()
+        heatmap_image.save(heatmap_path)
 
         return {
             "method": "Grad-CAM++",
