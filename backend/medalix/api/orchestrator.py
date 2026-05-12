@@ -8,6 +8,7 @@ from medalix.detection.route_detector import RouteDetector
 from medalix.explainability.explainability_engine import ExplainabilityEngine
 from medalix.ingestion.dicom_converter import DicomConverter
 from medalix.ingestion.ingestion_validator import IngestionValidator
+from medalix.ingestion.trained_medical_image_gate import TrainedMedicalImageGate
 from medalix.inference.ensemble_model import EnsembleModel
 from medalix.ood.ood_detector import OODDetector
 from medalix.policy.governed_decision_policy import GovernedDecisionPolicy
@@ -450,9 +451,80 @@ class Orchestrator:
                 content=content,
             )
 
+            state.set_stage("medical_image_gate")
+            medical_gate_result = TrainedMedicalImageGate().evaluate(working_content)
+
+            if not medical_gate_result.get("accepted", False):
+                state.input_gate_result = {
+                    "accepted_for_analysis": False,
+                    "confidence": medical_gate_result.get("confidence"),
+                    "message": medical_gate_result.get("reason"),
+                    "selected_route": "unknown",
+                    "route_scores": {},
+                    "manual_override": False,
+                    "top_level_gate": {
+                        "medical_image_gate": medical_gate_result,
+                        "conversion": conversion_result,
+                    },
+                }
+
+                state.detection_result = {
+                    "region": None,
+                    "modality": None,
+                    "confidence": medical_gate_result.get("confidence"),
+                    "requires_confirmation": True,
+                    "supported": False,
+                    "reason": medical_gate_result.get("reason"),
+                    "manual_override": False,
+                }
+
+                state.routing_result = {
+                    "accepted_findings_set": [],
+                    "selected_model": None,
+                    "set_size": 0,
+                    "requires_confirmation": True,
+                    "routing_candidates": [],
+                    "reason": medical_gate_result.get("reason"),
+                }
+
+                return self._stop_before_inference(
+                    state=state,
+                    reason=medical_gate_result.get("reason"),
+                    warnings=["Input rejected by trained medical-image gate."],
+                )
+
             state.set_stage("route_detection")
             route_result = self.route_detector.predict(working_content)
             route_result = self._apply_manual_route_override(route_result, route_override)
+
+            filename_lower = (working_filename or "").lower()
+
+            color_route_hints = {
+                "skin_dermoscopy": ["skin", "dermoscopy", "dermoscopic", "lesion", "mole", "nevus"],
+                "retina_fundus": ["retina", "fundus", "eye"],
+            }
+
+            selected_route_for_hint = route_result.get("route_label")
+            required_hints = color_route_hints.get(selected_route_for_hint)
+
+            if (
+                required_hints
+                and not route_result.get("manual_override", False)
+                and not any(hint in filename_lower for hint in required_hints)
+            ):
+                route_result = {
+                    **route_result,
+                    "route_label": "unknown",
+                    "region": None,
+                    "modality": None,
+                    "supported": False,
+                    "requires_confirmation": True,
+                    "reason": (
+                        f"Route detector selected {selected_route_for_hint}, but this color medical route "
+                        "requires filename evidence or manual confirmation. Automatic inference was blocked."
+                    ),
+                    "attempted_route_label": selected_route_for_hint,
+                }
 
             state.input_gate_result = self._build_input_gate_result(
                 route_result=route_result,

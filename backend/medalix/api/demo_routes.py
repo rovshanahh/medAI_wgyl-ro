@@ -23,6 +23,13 @@ DEMO_CASES = {
         "path": "test_samples/brain_mri.jpg",
         "expected": "ANSWER or ESCALATE with brain_mri_resnet18 and Grad-CAM++ heatmap.",
     },
+    "bone_xray": {
+        "title": "Valid bone X-ray",
+        "description": "Routes to bone_xray and classifies the musculoskeletal X-ray as Normal or Abnormal.",
+        "path": "test_samples/bone_xray.png",
+        "expected": "ANSWER or ESCALATE with bone_xray_standard and Grad-CAM++ heatmap.",
+        "route_override": "bone_xray",
+    },
     "chest_xray": {
         "title": "Valid chest X-ray",
         "description": "Routes to chest_xray and returns CheXpert-style multilabel findings.",
