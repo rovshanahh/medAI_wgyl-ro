@@ -48,22 +48,28 @@ class RouteDetector:
             ]
         )
 
+    def _unknown_result(self, reason: str, raw_route_label: str = "unknown") -> dict:
+        return {
+            "route_label": "unknown",
+            "raw_route_label": raw_route_label,
+            "attempted_route_label": raw_route_label,
+            "region": None,
+            "modality": None,
+            "confidence": 0.0,
+            "margin": 0.0,
+            "requires_confirmation": True,
+            "supported": False,
+            "route_decision": "UNKNOWN",
+            "decision_reasons": [reason],
+            "probabilities": {},
+            "reason": reason,
+        }
+
     def predict(self, raw_bytes: bytes) -> dict:
         try:
             image = Image.open(BytesIO(raw_bytes)).convert("RGB")
         except UnidentifiedImageError:
-            return {
-                "route_label": "unknown",
-                "raw_route_label": "unknown",
-                "region": None,
-                "modality": None,
-                "confidence": 0.0,
-                "margin": 0.0,
-                "requires_confirmation": True,
-                "supported": False,
-                "probabilities": {},
-                "reason": "File could not be opened as an image.",
-            }
+            return self._unknown_result("File could not be opened as an image.")
 
         tensor = self.transform(image).unsqueeze(0).to(self.device)
 
@@ -83,40 +89,62 @@ class RouteDetector:
             (None, None),
         )
 
-        low_confidence = confidence < self.MIN_CONFIDENCE
-        low_margin = margin < self.MIN_MARGIN
-        raw_unknown = raw_route_label == "unknown"
+        probability_map = {
+            self.class_names[i]: float(probs[i])
+            for i in range(len(self.class_names))
+        }
 
-        if raw_unknown or low_confidence or low_margin:
-            safe_route_label = "unknown"
-            region = None
-            modality = None
-            supported = False
-            requires_confirmation = True
-            reason = (
-                "Route detector confidence or margin was insufficient, "
-                "so input was treated as unknown."
+        decision_reasons = []
+
+        if raw_route_label == "unknown":
+            decision_reasons.append("Top route class was unknown.")
+
+        if confidence < self.MIN_CONFIDENCE:
+            decision_reasons.append(
+                f"Route confidence {confidence:.3f} is below threshold {self.MIN_CONFIDENCE:.2f}."
             )
-        else:
-            safe_route_label = raw_route_label
-            region = raw_region
-            modality = raw_modality
-            supported = region is not None and modality is not None
-            requires_confirmation = False
-            reason = "Route selected by multi-class route detector."
+
+        if margin < self.MIN_MARGIN:
+            decision_reasons.append(
+                f"Route margin {margin:.3f} is below threshold {self.MIN_MARGIN:.2f}."
+            )
+
+        if raw_region is None or raw_modality is None:
+            decision_reasons.append(
+                f"Raw route '{raw_route_label}' is not mapped to an active region/modality."
+            )
+
+        if decision_reasons:
+            return {
+                "route_label": "unknown",
+                "raw_route_label": raw_route_label,
+                "attempted_route_label": raw_route_label,
+                "region": None,
+                "modality": None,
+                "confidence": confidence,
+                "margin": margin,
+                "requires_confirmation": True,
+                "supported": False,
+                "route_decision": "NEEDS_CONFIRMATION",
+                "decision_reasons": decision_reasons,
+                "probabilities": probability_map,
+                "reason": "Route was not trusted enough for automatic model selection.",
+            }
 
         return {
-            "route_label": safe_route_label,
+            "route_label": raw_route_label,
             "raw_route_label": raw_route_label,
-            "region": region,
-            "modality": modality,
+            "attempted_route_label": raw_route_label,
+            "region": raw_region,
+            "modality": raw_modality,
             "confidence": confidence,
             "margin": margin,
-            "requires_confirmation": requires_confirmation,
-            "supported": supported,
-            "probabilities": {
-                self.class_names[i]: float(probs[i])
-                for i in range(len(self.class_names))
-            },
-            "reason": reason,
+            "requires_confirmation": False,
+            "supported": True,
+            "route_decision": "ACCEPTED",
+            "decision_reasons": [
+                "Route confidence and margin passed automatic selection thresholds."
+            ],
+            "probabilities": probability_map,
+            "reason": "Route selected by multi-class route detector.",
         }
