@@ -593,24 +593,76 @@ class EnsembleModel:
         disagreement_score: float,
         feature_vector,
     ) -> dict:
+        reliability_score = float(max(0.0, min(1.0, reliability_score)))
+        disagreement_score = float(max(0.0, disagreement_score))
+        predictive_entropy = float(max(0.0, predictive_entropy))
+
+        epistemic_values = [
+            float(value)
+            for value in (epistemic_uncertainty or {}).values()
+        ]
+        mean_epistemic = (
+            float(sum(epistemic_values) / len(epistemic_values))
+            if epistemic_values
+            else 0.0
+        )
+        max_epistemic = max(epistemic_values) if epistemic_values else 0.0
+
+        uncertainty_level = "LOW"
+
+        if (
+            float(top_probability) < 0.60
+            or reliability_score < 0.75
+            or mean_epistemic > 0.01
+            or disagreement_score > 0.01
+        ):
+            uncertainty_level = "HIGH"
+        elif (
+            float(top_probability) < 0.70
+            or reliability_score < 0.85
+            or mean_epistemic > 0.003
+            or disagreement_score > 0.003
+        ):
+            uncertainty_level = "MODERATE"
+
         return {
             "top_label": top_label,
             "top_probability": float(top_probability),
             "positive_findings": positive_findings,
             "probabilities": probabilities,
+
             "epistemic_uncertainty": epistemic_uncertainty,
-            "aleatoric_uncertainty": {"predictive_entropy": float(predictive_entropy)},
-            "reliability_score": float(max(0.0, min(1.0, reliability_score))),
-            "disagreement_score": float(disagreement_score),
-            "secondary_verification_triggered": False,
+            "aleatoric_uncertainty": {
+                "predictive_entropy": predictive_entropy
+            },
+
+            "uncertainty_summary": {
+                "level": uncertainty_level,
+                "method": "single_model_mc_dropout_proxy",
+                "mean_epistemic": mean_epistemic,
+                "max_epistemic": float(max_epistemic),
+                "predictive_entropy": predictive_entropy,
+                "disagreement_score": disagreement_score,
+                "reliability_score": reliability_score,
+                "interpretation": (
+                    "Lower uncertainty means the repeated stochastic predictions were more stable. "
+                    "This is an MVP uncertainty proxy, not a full clinical reliability guarantee."
+                ),
+            },
+
+            "reliability_score": reliability_score,
+            "disagreement_score": disagreement_score,
+            "secondary_verification_triggered": uncertainty_level in {"MODERATE", "HIGH"},
+
             "ensemble_member_count": 1,
             "mc_passes": self.mc_passes,
-            "uncertainty_method": "mc_dropout",
+            "uncertainty_method": "single_model_mc_dropout_proxy",
             "deep_ensemble_enabled": False,
             "uncertainty_note": (
-                "MVP uses single-model MC dropout for uncertainty estimation. "
-                "Full three-member deep ensemble is reserved for a later extension."
+                "This MVP uses one model with MC-dropout-style stochastic passes as an uncertainty proxy. "
+                "A true deep ensemble requires at least three independently trained checkpoints."
             ),
+
             "model_id": self._model_id(),
             "model_version": self._version(),
             "model_cache_key": self.model_cache_key,
