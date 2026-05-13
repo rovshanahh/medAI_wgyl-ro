@@ -121,27 +121,33 @@ class Orchestrator:
         metadata = ACTIVE_ROUTE_LOOKUP[route_override]
         original_route = dict(route_result or {})
 
-        probabilities = original_route.get("probabilities", {}) or {}
-        probabilities = dict(probabilities)
-
-        for key in list(probabilities.keys()):
-            probabilities[key] = 0.0
-
+        probabilities = {
+            route["route"]: 0.0
+            for route in ACTIVE_ROUTE_METADATA
+        }
+        probabilities["unknown"] = 0.0
         probabilities[route_override] = 1.0
 
         return {
             "route_label": route_override,
-            "raw_route_label": original_route.get("raw_route_label") or original_route.get("route_label"),
+            "raw_route_label": original_route.get("raw_route_label")
+            or original_route.get("route_label")
+            or "unknown",
+            "attempted_route_label": route_override,
             "region": metadata.get("region"),
             "modality": metadata.get("modality"),
-            "confidence": float(original_route.get("confidence") or 1.0),
-            "margin": original_route.get("margin"),
+            "confidence": 1.0,
+            "margin": 1.0,
             "requires_confirmation": False,
             "supported": True,
+            "route_decision": "MANUAL_OVERRIDE",
+            "decision_reasons": [
+                f"Human evaluator manually confirmed route '{route_override}'."
+            ],
             "probabilities": probabilities,
             "reason": (
                 f"Manual route override selected '{route_override}'. "
-                "Original detector result was kept in override_metadata."
+                "Automatic route detector output was preserved in override_metadata."
             ),
             "manual_override": True,
             "override_metadata": {
@@ -460,7 +466,7 @@ class Orchestrator:
             state.set_stage("medical_image_gate")
             medical_gate_result = TrainedMedicalImageGate().evaluate(working_content)
 
-            if not medical_gate_result.get("accepted", False):
+            if not medical_gate_result.get("accepted", False) and not route_override:
                 state.input_gate_result = {
                     "accepted_for_analysis": False,
                     "confidence": medical_gate_result.get("confidence"),
@@ -497,6 +503,11 @@ class Orchestrator:
                     state=state,
                     reason=medical_gate_result.get("reason"),
                     warnings=["Input rejected by trained medical-image gate."],
+                )
+
+            if not medical_gate_result.get("accepted", False) and route_override:
+                state.warnings.append(
+                    "Medical-image gate did not accept the image, but manual route confirmation was provided."
                 )
 
             state.set_stage("route_detection")

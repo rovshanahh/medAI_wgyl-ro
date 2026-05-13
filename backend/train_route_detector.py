@@ -70,7 +70,6 @@ def build_loaders():
     train_tf = transforms.Compose(
         [
             transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-            transforms.Grayscale(num_output_channels=3),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomRotation(degrees=8),
             transforms.RandomAffine(
@@ -89,7 +88,6 @@ def build_loaders():
     eval_tf = transforms.Compose(
         [
             transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-            transforms.Grayscale(num_output_channels=3),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
@@ -302,6 +300,7 @@ def main() -> None:
                 "Route detector: brain_mri vs bone_xray vs breast_mammography "
                 "vs chest_xray vs retina_fundus vs skin_dermoscopy vs unknown"
             ),
+            "note": "Color is preserved. Do not grayscale skin_dermoscopy or retina_fundus.",
         },
         MODEL_OUT,
     )

@@ -5,8 +5,17 @@ from torchvision import transforms
 
 
 class PreprocessingPipeline:
-    XRAY_MODALITIES = {"xray", "mammography"}
-    RGB_MODALITIES = {"dermoscopy", "fundus"}
+    GRAYSCALE_MODALITIES = {
+        "xray",
+        "mammography",
+        "ct",
+        "mri",
+    }
+
+    RGB_MODALITIES = {
+        "dermoscopy",
+        "fundus",
+    }
 
     def __init__(self):
         self._grayscale_transform = transforms.Compose(
@@ -41,18 +50,15 @@ class PreprocessingPipeline:
             raise ValueError(f"Failed to decode uploaded image: {str(exc)}") from exc
 
     def _select_profile(self, modality: str | None) -> str:
-        modality = (modality or "").strip().lower()
+        normalized_modality = str(modality or "").strip().lower()
 
-        if modality in self.XRAY_MODALITIES:
+        if normalized_modality in self.GRAYSCALE_MODALITIES:
             return "grayscale_2d"
 
-        if modality in {"ct", "mri"}:
-            return "grayscale_2d"
+        if normalized_modality in self.RGB_MODALITIES:
+            return "rgb_2d"
 
-        if modality in self.RGB_MODALITIES:
-            raise ValueError(f"Unsupported preprocessing modality: {modality}")
-
-        return "rgb_2d"
+        raise ValueError(f"Unsupported preprocessing modality: {normalized_modality}")
 
     def run(self, raw_bytes: bytes, modality: str | None = None):
         image = self._decode_image(raw_bytes)
