@@ -18,7 +18,8 @@ class TrainedMedicalImageGate:
         checkpoint = torch.load(self.model_path, map_location=self.device)
 
         self.class_names = checkpoint["class_names"]
-        self.threshold = float(checkpoint.get("threshold", 0.75))
+        self.medical_threshold = float(checkpoint.get("medical_threshold", 0.70))
+        self.non_medical_threshold = float(checkpoint.get("non_medical_threshold", 0.65))
         image_size = int(checkpoint.get("image_size", 224))
 
         self.model = models.resnet18(weights=None)
@@ -61,19 +62,34 @@ class TrainedMedicalImageGate:
             for i in range(len(self.class_names))
         }
 
-        medical_probability = probabilities.get("medical", 0.0)
         predicted_label = max(probabilities, key=probabilities.get)
-        accepted = medical_probability >= self.threshold
+        predicted_probability = probabilities[predicted_label]
+
+        radiology_probability = probabilities.get("radiology_medical", 0.0)
+        color_medical_probability = probabilities.get("color_medical", 0.0)
+        non_medical_probability = probabilities.get("non_medical", 0.0)
+        medical_probability = radiology_probability + color_medical_probability
+
+        accepted = (
+            medical_probability >= self.medical_threshold
+            and non_medical_probability < self.non_medical_threshold
+        )
 
         return {
             "accepted": accepted,
             "confidence": medical_probability,
             "predicted_label": predicted_label,
-            "threshold": self.threshold,
+            "predicted_probability": predicted_probability,
+            "medical_probability": medical_probability,
+            "radiology_probability": radiology_probability,
+            "color_medical_probability": color_medical_probability,
+            "non_medical_probability": non_medical_probability,
+            "medical_threshold": self.medical_threshold,
+            "non_medical_threshold": self.non_medical_threshold,
             "probabilities": probabilities,
             "reason": (
-                "Input accepted as likely medical imaging."
+                "Input accepted by three-class medical-image gate."
                 if accepted
-                else "Input rejected as likely non-medical or unsupported."
+                else "Input rejected by three-class medical-image gate as likely non-medical or unsupported."
             ),
         }
