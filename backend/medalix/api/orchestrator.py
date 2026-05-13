@@ -123,10 +123,11 @@ class Orchestrator:
 
         probabilities = original_route.get("probabilities", {}) or {}
         probabilities = dict(probabilities)
-        probabilities[route_override] = max(
-            float(probabilities.get(route_override, 0.0)),
-            float(original_route.get("confidence") or 0.0),
-        )
+
+        for key in list(probabilities.keys()):
+            probabilities[key] = 0.0
+
+        probabilities[route_override] = 1.0
 
         return {
             "route_label": route_override,
@@ -366,9 +367,14 @@ class Orchestrator:
         reason: str,
         warnings: list[str] | None = None,
     ) -> dict:
-        state.quality_result = state.quality_result or {}
-        state.ood_result = state.ood_result or {}
-        state.explainability_result = state.explainability_result or {}
+        if state.quality_result is None:
+            state.quality_result = {}
+
+        if state.ood_result is None:
+            state.ood_result = {}
+
+        if state.explainability_result is None:
+            state.explainability_result = {}
 
         state.policy_result = self._build_policy_result(
             action="STOP",
@@ -496,35 +502,6 @@ class Orchestrator:
             state.set_stage("route_detection")
             route_result = self.route_detector.predict(working_content)
             route_result = self._apply_manual_route_override(route_result, route_override)
-
-            filename_lower = (working_filename or "").lower()
-
-            color_route_hints = {
-                "skin_dermoscopy": ["skin", "dermoscopy", "dermoscopic", "lesion", "mole", "nevus"],
-                "retina_fundus": ["retina", "fundus", "eye"],
-            }
-
-            selected_route_for_hint = route_result.get("route_label")
-            required_hints = color_route_hints.get(selected_route_for_hint)
-
-            if (
-                required_hints
-                and not route_result.get("manual_override", False)
-                and not any(hint in filename_lower for hint in required_hints)
-            ):
-                route_result = {
-                    **route_result,
-                    "route_label": "unknown",
-                    "region": None,
-                    "modality": None,
-                    "supported": False,
-                    "requires_confirmation": True,
-                    "reason": (
-                        f"Route detector selected {selected_route_for_hint}, but this color medical route "
-                        "requires filename evidence or manual confirmation. Automatic inference was blocked."
-                    ),
-                    "attempted_route_label": selected_route_for_hint,
-                }
 
             state.input_gate_result = self._build_input_gate_result(
                 route_result=route_result,
@@ -723,11 +700,14 @@ class Orchestrator:
                 ),
             )
 
-            if policy_output.action != "STOP":
+            if state.inference_result:
                 payload.update(
                     {
                         "tensor_shape": list(state.tensor.shape),
                         "inference": state.inference_result,
+                        "inference_visibility_note": (
+                            "Inference ran, but final use is controlled by the governed policy decision."
+                        ),
                     }
                 )
 

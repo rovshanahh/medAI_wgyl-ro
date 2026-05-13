@@ -73,6 +73,14 @@ class ModelRegistry:
                 raise ValueError(
                     f"Model {metadata.model_id} must define at least 3 ensemble members"
                 )
+
+            for member_path in metadata.ensemble_members:
+                if not Path(member_path).exists():
+                    raise ValueError(
+                        f"Ensemble member checkpoint not found for model "
+                        f"{metadata.model_id}: {member_path}"
+                    )
+
             return
 
         if metadata.model_id in self.REMOTE_MODEL_IDS:

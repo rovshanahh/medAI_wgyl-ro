@@ -50,7 +50,7 @@ class PreprocessingPipeline:
             return "grayscale_2d"
 
         if modality in self.RGB_MODALITIES:
-            return "rgb_2d"
+            raise ValueError(f"Unsupported preprocessing modality: {modality}")
 
         return "rgb_2d"
 
