@@ -963,13 +963,38 @@ export default function ReviewPage() {
                   </p>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <PipelineStep label="Input validated" done={Boolean(result.input_gate)} />
-                    <PipelineStep label="Route selected" done={Boolean(selectedRoute && selectedRoute !== "—")} />
-                    <PipelineStep label="Model inference completed" done={Boolean(result.inference?.top_label)} />
-                    <PipelineStep label="Quality checked" done={Boolean(result.quality?.status)} />
-                    <PipelineStep label="OOD screened" done={Boolean(result.ood?.tier)} />
-                    <PipelineStep label="Focus map generated" done={Boolean(result.explainability?.heatmap_path)} />
-                    <PipelineStep label="Policy decision made" done={Boolean(result.policy?.action)} />
+                    <PipelineStep
+                      label="Input accepted"
+                      done={result.input_gate?.accepted_for_analysis === true}
+                    />
+                    <PipelineStep
+                      label="Route selected"
+                      done={Boolean(
+                        selectedRoute &&
+                          selectedRoute !== "—" &&
+                          selectedRoute !== "unknown"
+                      )}
+                    />
+                    <PipelineStep
+                      label="Model inference completed"
+                      done={Boolean(result.inference?.top_label)}
+                    />
+                    <PipelineStep
+                      label="Quality checked"
+                      done={Boolean(result.quality?.status)}
+                    />
+                    <PipelineStep
+                      label="OOD screened"
+                      done={Boolean(result.ood?.tier)}
+                    />
+                    <PipelineStep
+                      label="Focus map generated"
+                      done={Boolean(result.explainability?.heatmap_path)}
+                    />
+                    <PipelineStep
+                      label="Policy decision made"
+                      done={Boolean(result.policy?.action)}
+                    />
                   </div>
                 </div>
 
