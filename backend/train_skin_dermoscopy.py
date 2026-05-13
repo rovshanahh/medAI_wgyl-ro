@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 import copy
 import csv
 import random
@@ -7,8 +8,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import models, transforms
+from sklearn.metrics import classification_report, f1_score
 
 
 RAW_ROOT = Path("raw_datasets/ham10000")
@@ -208,7 +210,14 @@ def build_loaders():
     val_ds = Ham10000Dataset(val_samples, transform=eval_tf)
     test_ds = Ham10000Dataset(test_samples, transform=eval_tf)
 
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
+    train_sampler = build_weighted_sampler(train_samples)
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=BATCH_SIZE,
+        sampler=train_sampler,
+        num_workers=0,
+    )
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
@@ -222,6 +231,42 @@ def class_counts(samples: list[tuple[Path, int, str]]) -> dict:
         counts[CLASS_NAMES[dx]] += 1
 
     return counts
+
+def raw_label_counts(samples: list[tuple[Path, int, str]]) -> dict[int, int]:
+    counts = {label: 0 for label in range(len(CLASS_ORDER))}
+
+    for _, label, _ in samples:
+        counts[label] += 1
+
+    return counts
+
+
+def build_weighted_sampler(samples: list[tuple[Path, int, str]]) -> WeightedRandomSampler:
+    counts = raw_label_counts(samples)
+
+    sample_weights = []
+    for _, label, _ in samples:
+        sample_weights.append(1.0 / max(counts[label], 1))
+
+    return WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True,
+    )
+
+
+def build_class_weights(samples: list[tuple[Path, int, str]], device: torch.device) -> torch.Tensor:
+    counts = raw_label_counts(samples)
+    total = sum(counts.values())
+    num_classes = len(CLASS_ORDER)
+
+    weights = []
+    for label in range(num_classes):
+        weights.append(total / (num_classes * max(counts[label], 1)))
+
+    weights = torch.tensor(weights, dtype=torch.float32, device=device)
+    weights = weights / weights.mean()
+    return weights
 
 
 def build_model(device: torch.device) -> nn.Module:
@@ -278,6 +323,8 @@ def evaluate_details(model, loader, device):
 
     total = 0
     correct = 0
+    y_true = []
+    y_pred = []
 
     with torch.no_grad():
         for images, labels in loader:
@@ -294,11 +341,25 @@ def evaluate_details(model, loader, device):
                 confusion[true_label][pred_label] += 1
                 total += 1
 
+                y_true.append(true_idx)
+                y_pred.append(pred_idx)
+
                 if true_idx == pred_idx:
                     correct += 1
 
     accuracy = correct / total if total else 0.0
-    return accuracy, confusion
+    macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+    weighted_f1 = f1_score(y_true, y_pred, average="weighted", zero_division=0)
+
+    report = classification_report(
+        y_true,
+        y_pred,
+        target_names=readable_labels,
+        zero_division=0,
+        output_dict=True,
+    )
+
+    return accuracy, macro_f1, weighted_f1, confusion, report
 
 
 def print_confusion(confusion: dict) -> None:
@@ -316,11 +377,24 @@ def print_confusion(confusion: dict) -> None:
         print(row)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--output", type=str, default=str(MODEL_OUT))
+    return parser.parse_args()
+
+
 def main() -> None:
-    set_seed(SEED)
+    args = parse_args()
+
+    set_seed(args.seed)
+
+    output_path = Path(args.output)
 
     device = get_device()
     print("Device:", device)
+    print("Seed:", args.seed)
+    print("Output:", output_path)
 
     (
         train_ds,
@@ -347,7 +421,13 @@ def main() -> None:
 
     model = build_model(device)
 
-    criterion = nn.CrossEntropyLoss()
+    class_weights = build_class_weights(train_ds.samples, device)
+
+    print("\nClass weights:")
+    for class_key, weight in zip(CLASS_ORDER, class_weights.detach().cpu().tolist()):
+        print(f"  {CLASS_NAMES[class_key]}: {weight:.3f}")
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.03)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
     best_val_acc = -1.0
@@ -385,16 +465,18 @@ def main() -> None:
 
     model.load_state_dict(best_state)
 
-    test_acc, confusion = evaluate_details(
+    test_acc, test_macro_f1, test_weighted_f1, confusion, classification_metrics = evaluate_details(
         model=model,
         loader=test_loader,
         device=device,
     )
 
-    print(f"\nTest accuracy: {test_acc:.4f}")
+    print(f"\nTest accuracy:    {test_acc:.4f}")
+    print(f"Test macro-F1:    {test_macro_f1:.4f}")
+    print(f"Test weighted-F1: {test_weighted_f1:.4f}")
     print_confusion(confusion)
 
-    MODEL_OUT.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     torch.save(
         {
@@ -405,17 +487,24 @@ def main() -> None:
             "image_size": IMAGE_SIZE,
             "best_val_acc": best_val_acc,
             "test_acc": test_acc,
+            "test_macro_f1": test_macro_f1,
+            "test_weighted_f1": test_weighted_f1,
             "confusion": confusion,
+            "classification_report": classification_metrics,
             "architecture": "resnet18",
             "task": "skin_dermoscopy_lesion_classification",
             "dataset": "HAM10000",
+            "seed": args.seed,
+            "ensemble_member": True,
         },
-        MODEL_OUT,
+        output_path,
     )
 
-    print(f"\nSaved to: {MODEL_OUT}")
+    print(f"\nSaved to: {output_path}")
     print(f"Best val_acc: {best_val_acc:.4f}")
-    print(f"Test acc:     {test_acc:.4f}")
+    print(f"Test acc:         {test_acc:.4f}")
+    print(f"Test macro-F1:    {test_macro_f1:.4f}")
+    print(f"Test weighted-F1: {test_weighted_f1:.4f}")
 
 
 if __name__ == "__main__":

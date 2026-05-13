@@ -289,6 +289,7 @@ class Orchestrator:
             "probabilities": inference_result.get("probabilities", {}),
             "epistemic_uncertainty": inference_result.get("epistemic_uncertainty", {}),
             "aleatoric_uncertainty": inference_result.get("aleatoric_uncertainty", {}),
+            "uncertainty_summary": inference_result.get("uncertainty_summary", {}),
             "reliability_score": inference_result.get("reliability_score"),
             "disagreement_score": inference_result.get("disagreement_score"),
             "secondary_verification_triggered": inference_result.get(
