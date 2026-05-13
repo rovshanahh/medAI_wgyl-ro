@@ -429,13 +429,17 @@ class EnsembleModel:
         self.temperature_config = load_temperature_config()
         self.temperature = self._load_temperature()
         self.calibration_method = self._load_calibration_method()
+        self._active_model_path_override = None
 
         cached = self._get_or_load_cached_model()
 
         self.model = cached["model"]
+        self.models = cached.get("models", [cached["model"]])
         self.labels = cached["labels"]
         self.task_type = cached["task_type"]
         self.model_cache_key = cached["cache_key"]
+        self.deep_ensemble_enabled = bool(cached.get("deep_ensemble_enabled", False))
+        self.ensemble_member_count = int(cached.get("ensemble_member_count", len(self.models)))
 
     def _normalized_region(self) -> str:
         return str(getattr(self.model_metadata, "region", "") or "").strip().lower()
@@ -444,6 +448,9 @@ class EnsembleModel:
         return str(getattr(self.model_metadata, "modality", "") or "").strip().lower()
 
     def _model_path(self) -> str:
+        if self._active_model_path_override:
+            return str(self._active_model_path_override)
+
         return str(getattr(self.model_metadata, "model_path", "") or "")
 
     def _architecture(self) -> str:
@@ -478,7 +485,13 @@ class EnsembleModel:
         return logits / self.temperature
 
     def _cache_key(self) -> str:
-        return f"{self._model_id()}:{self._version()}:{self.device.type}"
+        member_paths = self._ensemble_member_paths()
+
+        if member_paths:
+            member_key = "|".join(member_paths)
+            return f"{self._model_id()}:{self._version()}:{self.device.type}:ensemble:{member_key}"
+
+        return f"{self._model_id()}:{self._version()}:{self.device.type}:single"
 
     def _get_or_load_cached_model(self) -> dict:
         cache_key = self._cache_key()
@@ -487,11 +500,73 @@ class EnsembleModel:
             if cache_key in _MODEL_CACHE:
                 return _MODEL_CACHE[cache_key]
 
-            loaded = self._load_model_for_route()
+            if self._has_deep_ensemble():
+                loaded = self._load_deep_ensemble_for_route()
+            else:
+                loaded = self._load_model_for_route()
+                loaded["models"] = [loaded["model"]]
+                loaded["deep_ensemble_enabled"] = False
+                loaded["ensemble_member_count"] = 1
+
             loaded["cache_key"] = cache_key
             _MODEL_CACHE[cache_key] = loaded
 
             return loaded
+
+    def _ensemble_member_paths(self) -> list[str]:
+        members = list(getattr(self.model_metadata, "ensemble_members", []) or [])
+        paths = []
+
+        for member in members:
+            if isinstance(member, dict):
+                member_path = member.get("model_path") or member.get("path")
+            else:
+                member_path = member
+
+            member_path = str(member_path or "").strip()
+
+            if member_path:
+                paths.append(member_path)
+
+        return paths
+
+    def _has_deep_ensemble(self) -> bool:
+        return len(self._ensemble_member_paths()) >= 3
+
+    def _load_deep_ensemble_for_route(self) -> dict:
+        member_paths = self._ensemble_member_paths()
+
+        if len(member_paths) < 3:
+            raise ValueError(
+                f"Deep ensemble for {self._model_id()} requires at least 3 member checkpoints."
+            )
+
+        models_for_route = []
+        labels = None
+        task_type = None
+
+        previous_override = self._active_model_path_override
+
+        try:
+            for member_path in member_paths:
+                self._active_model_path_override = member_path
+                loaded = self._load_model_for_route()
+
+                models_for_route.append(loaded["model"])
+                labels = loaded["labels"]
+                task_type = loaded["task_type"]
+
+        finally:
+            self._active_model_path_override = previous_override
+
+        return {
+            "model": models_for_route[0],
+            "models": models_for_route,
+            "labels": labels,
+            "task_type": task_type,
+            "deep_ensemble_enabled": True,
+            "ensemble_member_count": len(models_for_route),
+        }
 
     def _load_model_for_route(self) -> dict:
         region = self._normalized_region()
@@ -592,6 +667,10 @@ class EnsembleModel:
         reliability_score: float,
         disagreement_score: float,
         feature_vector,
+        ensemble_member_count: int | None = None,
+        uncertainty_method: str | None = None,
+        deep_ensemble_enabled: bool | None = None,
+        uncertainty_note: str | None = None,
     ) -> dict:
         reliability_score = float(max(0.0, min(1.0, reliability_score)))
         disagreement_score = float(max(0.0, disagreement_score))
@@ -601,6 +680,7 @@ class EnsembleModel:
             float(value)
             for value in (epistemic_uncertainty or {}).values()
         ]
+
         mean_epistemic = (
             float(sum(epistemic_values) / len(epistemic_values))
             if epistemic_values
@@ -625,44 +705,61 @@ class EnsembleModel:
         ):
             uncertainty_level = "MODERATE"
 
+        resolved_ensemble_count = (
+            int(ensemble_member_count)
+            if ensemble_member_count is not None
+            else int(getattr(self, "ensemble_member_count", 1))
+        )
+        resolved_deep_ensemble = (
+            bool(deep_ensemble_enabled)
+            if deep_ensemble_enabled is not None
+            else bool(getattr(self, "deep_ensemble_enabled", False))
+        )
+        resolved_method = uncertainty_method or (
+            "deep_ensemble"
+            if resolved_deep_ensemble
+            else "single_model_mc_dropout_fallback"
+        )
+
+        resolved_note = uncertainty_note or (
+            "Deep ensemble uncertainty was computed from independently registered model members."
+            if resolved_deep_ensemble
+            else (
+                "Fallback uncertainty uses one model with MC-dropout-style stochastic passes. "
+                "This is not a true deep ensemble."
+            )
+        )
+
         return {
             "top_label": top_label,
             "top_probability": float(top_probability),
             "positive_findings": positive_findings,
             "probabilities": probabilities,
-
             "epistemic_uncertainty": epistemic_uncertainty,
             "aleatoric_uncertainty": {
-                "predictive_entropy": predictive_entropy
+                "predictive_entropy": predictive_entropy,
             },
-
             "uncertainty_summary": {
                 "level": uncertainty_level,
-                "method": "single_model_mc_dropout_proxy",
+                "method": resolved_method,
                 "mean_epistemic": mean_epistemic,
                 "max_epistemic": float(max_epistemic),
                 "predictive_entropy": predictive_entropy,
                 "disagreement_score": disagreement_score,
                 "reliability_score": reliability_score,
                 "interpretation": (
-                    "Lower uncertainty means the repeated stochastic predictions were more stable. "
-                    "This is an MVP uncertainty proxy, not a full clinical reliability guarantee."
+                    "Epistemic uncertainty is estimated from model disagreement. "
+                    "Aleatoric uncertainty is represented by predictive entropy."
                 ),
             },
-
             "reliability_score": reliability_score,
             "disagreement_score": disagreement_score,
             "secondary_verification_triggered": uncertainty_level in {"MODERATE", "HIGH"},
-
-            "ensemble_member_count": 1,
+            "ensemble_member_count": resolved_ensemble_count,
             "mc_passes": self.mc_passes,
-            "uncertainty_method": "single_model_mc_dropout_proxy",
-            "deep_ensemble_enabled": False,
-            "uncertainty_note": (
-                "This MVP uses one model with MC-dropout-style stochastic passes as an uncertainty proxy. "
-                "A true deep ensemble requires at least three independently trained checkpoints."
-            ),
-
+            "uncertainty_method": resolved_method,
+            "deep_ensemble_enabled": resolved_deep_ensemble,
+            "uncertainty_note": resolved_note,
             "model_id": self._model_id(),
             "model_version": self._version(),
             "model_cache_key": self.model_cache_key,
@@ -806,7 +903,102 @@ class EnsembleModel:
             feature_vector=feature_vector,
         )
 
+    def _probabilities_from_logits(self, logits: torch.Tensor) -> np.ndarray:
+        calibrated_logits = self._apply_temperature(logits)
+
+        if self.task_type == "multilabel":
+            return torch.sigmoid(calibrated_logits).squeeze(0).detach().cpu().numpy()
+
+        if self.task_type == "binary":
+            abnormal_prob = float(torch.sigmoid(calibrated_logits).squeeze().detach().cpu().item())
+            return np.array([1.0 - abnormal_prob, abnormal_prob], dtype=np.float32)
+
+        if self.task_type == "multiclass":
+            return torch.softmax(calibrated_logits, dim=1).squeeze(0).detach().cpu().numpy()
+
+        raise ValueError("Unsupported inference task type.")
+
+    def _entropy_from_mean_probs(self, mean_probs: np.ndarray) -> float:
+        if self.task_type == "multilabel":
+            return float(
+                -np.sum(
+                    mean_probs * np.log(mean_probs + 1e-12)
+                    + (1.0 - mean_probs) * np.log((1.0 - mean_probs) + 1e-12)
+                )
+            )
+
+        return float(-np.sum(mean_probs * np.log(mean_probs + 1e-12)))
+
+    def _predict_deep_ensemble(self, tensor: torch.Tensor) -> dict:
+        tensor = self._prepare_tensor(tensor)
+        member_probs = []
+        feature_vector = None
+
+        with torch.no_grad():
+            for index, model in enumerate(self.models):
+                model.eval()
+
+                if hasattr(model, "extract_features"):
+                    features = model.extract_features(tensor)
+                    logits = model(tensor)
+                else:
+                    logits = model(tensor)
+                    features = None
+
+                probs = self._probabilities_from_logits(logits)
+                member_probs.append(probs)
+
+                if index == 0 and features is not None:
+                    feature_vector = features.squeeze(0).detach().cpu().numpy()
+
+        member_probs = np.array(member_probs, dtype=np.float32)
+        mean_probs = member_probs.mean(axis=0)
+        var_probs = member_probs.var(axis=0)
+
+        top_idx = int(np.argmax(mean_probs))
+
+        if self.task_type == "multilabel":
+            positive_findings = [
+                self.labels[i] for i in range(len(self.labels)) if mean_probs[i] >= 0.5
+            ]
+        else:
+            positive_findings = [self.labels[top_idx]]
+
+        predictive_entropy = self._entropy_from_mean_probs(mean_probs)
+        disagreement_score = float(np.mean(var_probs))
+
+        top_probability = float(mean_probs[top_idx])
+        reliability_score = float(
+            max(0.0, min(1.0, top_probability * (1.0 - disagreement_score)))
+        )
+
+        return self._base_payload(
+            top_label=self.labels[top_idx],
+            top_probability=top_probability,
+            positive_findings=positive_findings,
+            probabilities={
+                self.labels[i]: float(mean_probs[i]) for i in range(len(self.labels))
+            },
+            epistemic_uncertainty={
+                self.labels[i]: float(var_probs[i]) for i in range(len(self.labels))
+            },
+            predictive_entropy=predictive_entropy,
+            reliability_score=reliability_score,
+            disagreement_score=disagreement_score,
+            feature_vector=feature_vector,
+            ensemble_member_count=len(self.models),
+            uncertainty_method="deep_ensemble",
+            deep_ensemble_enabled=True,
+            uncertainty_note=(
+                "Deep ensemble enabled: predictions were averaged across "
+                f"{len(self.models)} registered model checkpoints."
+            ),
+        )
+
     def predict(self, tensor: torch.Tensor) -> dict:
+        if self.deep_ensemble_enabled:
+            return self._predict_deep_ensemble(tensor)
+
         if self.task_type == "multilabel":
             return self._predict_multilabel(tensor)
 
