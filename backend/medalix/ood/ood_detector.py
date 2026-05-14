@@ -2,7 +2,69 @@ from pathlib import Path
 import json
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
+
+
+class SmallDenoisingUNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        self.enc1 = nn.Sequential(
+            nn.Conv2d(4, 32, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+        self.enc2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+        self.enc3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+        self.dec2 = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+        self.dec1 = nn.Sequential(
+            nn.ConvTranspose2d(128, 32, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+        )
+
+        self.out = nn.Conv2d(64, 3, kernel_size=3, padding=1)
+
+    def forward(self, x: torch.Tensor, noise_level: torch.Tensor) -> torch.Tensor:
+        batch_size, _, height, width = x.shape
+        t_map = noise_level.view(batch_size, 1, 1, 1).expand(
+            batch_size,
+            1,
+            height,
+            width,
+        )
+
+        x = torch.cat([x, t_map], dim=1)
+
+        e1 = self.enc1(x)
+        e2 = self.enc2(e1)
+        e3 = self.enc3(e2)
+
+        d2 = self.dec2(e3)
+        d2 = torch.cat([d2, e2], dim=1)
+
+        d1 = self.dec1(d2)
+        d1 = torch.cat([d1, e1], dim=1)
+
+        return torch.sigmoid(self.out(d1))
 
 
 class OODDetector:
@@ -26,11 +88,28 @@ class OODDetector:
         stats_path: str = "reference_data/ood/feature_stats.json",
         diffusion_steps: int = 5,
         minimum_feature_reference_count: int = 5,
+        diffusion_model_path: str = "reference_data/ood/diffusion_ood_model.pth",
+        diffusion_thresholds_path: str = "reference_data/ood/diffusion_ood_thresholds.json",
+        route_diffusion_thresholds_path: str = "reference_data/ood/route_diffusion_thresholds.json",
     ):
         self.stats_path = Path(stats_path)
         self.diffusion_steps = diffusion_steps
         self.minimum_feature_reference_count = minimum_feature_reference_count
         self.feature_stats = self._load_feature_stats()
+
+        self.diffusion_model_path = Path(diffusion_model_path)
+        self.diffusion_thresholds_path = Path(diffusion_thresholds_path)
+        self.route_diffusion_thresholds_path = Path(route_diffusion_thresholds_path)
+        self.diffusion_thresholds = self._load_diffusion_thresholds()
+        self.route_diffusion_thresholds = self._load_route_diffusion_thresholds()
+        self.diffusion_device = torch.device(
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
+        self.diffusion_model = self._load_diffusion_model()
 
     def _load_feature_stats(self) -> dict:
         if not self.stats_path.exists():
@@ -40,6 +119,44 @@ class OODDetector:
             return json.loads(self.stats_path.read_text(encoding="utf-8"))
         except Exception:
             return {}
+
+    def _load_diffusion_thresholds(self) -> dict:
+        if not self.diffusion_thresholds_path.exists():
+            return {}
+
+        try:
+            return json.loads(self.diffusion_thresholds_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _load_route_diffusion_thresholds(self) -> dict:
+        if not self.route_diffusion_thresholds_path.exists():
+            return {}
+
+        try:
+            data = json.loads(
+                self.route_diffusion_thresholds_path.read_text(encoding="utf-8")
+            )
+            return data.get("routes", {})
+        except Exception:
+            return {}
+
+    def _route_thresholds(self, route_label: str) -> dict:
+        return self.route_diffusion_thresholds.get(route_label, {})
+
+    def _load_diffusion_model(self):
+        if not self.diffusion_model_path.exists():
+            return None
+
+        try:
+            checkpoint = torch.load(self.diffusion_model_path, map_location=self.diffusion_device)
+            model = SmallDenoisingUNet()
+            model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+            model.to(self.diffusion_device)
+            model.eval()
+            return model
+        except Exception:
+            return None
 
     def _basic_tensor_check(self, tensor: torch.Tensor) -> dict:
         if not isinstance(tensor, torch.Tensor):
@@ -78,15 +195,88 @@ class OODDetector:
             },
         }
 
+    def _prepare_diffusion_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
+        x = tensor.detach().float()
+
+        if x.ndim != 4:
+            raise ValueError("Expected tensor shape [B, C, H, W].")
+
+        if x.shape[1] == 1:
+            x = x.repeat(1, 3, 1, 1)
+
+        if x.shape[1] > 3:
+            x = x[:, :3, :, :]
+
+        # Convert normalized tensors approximately back to [0, 1] range.
+        if float(x.min().cpu().item()) < 0.0 or float(x.max().cpu().item()) > 1.0:
+            x = torch.clamp((x + 2.5) / 5.0, 0.0, 1.0)
+
+        x = F.interpolate(
+            x,
+            size=(128, 128),
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        return x.to(self.diffusion_device)
+
+    def _add_diffusion_noise(self, images: torch.Tensor, step: int):
+        noise_level = torch.full(
+            (images.size(0),),
+            0.05 + (float(step) / 4.0) * 0.20,
+            dtype=torch.float32,
+            device=self.diffusion_device,
+        )
+        noise = torch.randn_like(images) * noise_level.view(-1, 1, 1, 1)
+        noisy = torch.clamp(images + noise, 0.0, 1.0)
+        return noisy, noise_level
+
     def _diffusion_stability_score(self, tensor: torch.Tensor) -> dict:
         """
-        Five-step diffusion-style perturbation stability check.
+        Trained five-step denoising diffusion-style OOD score.
 
-        The image tensor is perturbed with increasing Gaussian noise, then
-        softly denoised with average pooling. The average reconstruction
-        difference is used as an instability score.
+        The input is noised at 5 levels and reconstructed by the trained
+        denoising model. Higher reconstruction error means more OOD risk.
+        """
 
-        Higher score = more suspicious.
+        if self.diffusion_model is None:
+            return self._fallback_diffusion_stability_score(tensor)
+
+        try:
+            x = self._prepare_diffusion_tensor(tensor)
+        except Exception as exc:
+            return {
+                "score": 1.0,
+                "step_errors": [],
+                "reason": f"Invalid tensor for trained diffusion OOD scoring: {exc}",
+                "method": "trained_5_step_denoising_diffusion_ood",
+                "model_available": True,
+            }
+
+        step_errors = []
+
+        with torch.no_grad():
+            for step in range(self.diffusion_steps):
+                noisy, noise_level = self._add_diffusion_noise(x, step)
+                reconstructed = self.diffusion_model(noisy, noise_level)
+                error = torch.mean(torch.abs(x - reconstructed)).item()
+                step_errors.append(float(error))
+
+        score = float(sum(step_errors) / len(step_errors))
+
+        return {
+            "score": score,
+            "step_errors": step_errors,
+            "reason": "Trained five-step denoising diffusion OOD score computed.",
+            "method": "trained_5_step_denoising_diffusion_ood",
+            "model_available": True,
+            "threshold_near": self.diffusion_thresholds.get("near_threshold"),
+            "threshold_hard": self.diffusion_thresholds.get("hard_threshold"),
+        }
+
+    def _fallback_diffusion_stability_score(self, tensor: torch.Tensor) -> dict:
+        """
+        Fallback only used if trained diffusion OOD model is unavailable.
         """
 
         x = tensor.detach().float().cpu()
@@ -95,7 +285,9 @@ class OODDetector:
             return {
                 "score": 1.0,
                 "step_errors": [],
-                "reason": "Invalid tensor shape for diffusion-style OOD scoring.",
+                "reason": "Invalid tensor shape for fallback diffusion-style OOD scoring.",
+                "method": "fallback_average_pooling_stability",
+                "model_available": False,
             }
 
         step_errors = []
@@ -120,7 +312,9 @@ class OODDetector:
         return {
             "score": score,
             "step_errors": step_errors,
-            "reason": "Five-step diffusion-style stability score computed.",
+            "reason": "Fallback five-step average-pooling stability score computed.",
+            "method": "fallback_average_pooling_stability",
+            "model_available": False,
         }
 
     def _feature_distance_score(
@@ -218,8 +412,20 @@ class OODDetector:
 
         diffusion_score = float(diffusion_result["score"])
 
-        diffusion_near_threshold = 0.75
-        diffusion_hard_threshold = 1.10
+        route_thresholds = self._route_thresholds(route_label)
+
+        diffusion_near_threshold = float(
+            route_thresholds.get(
+                "near_threshold",
+                self.diffusion_thresholds.get("near_threshold", 0.75),
+            )
+        )
+        diffusion_hard_threshold = float(
+            route_thresholds.get(
+                "hard_threshold",
+                self.diffusion_thresholds.get("hard_threshold", 1.10),
+            )
+        )
 
         feature_available = bool(feature_result.get("available", False))
         feature_score = feature_result.get("score")
@@ -342,6 +548,19 @@ class OODDetector:
                 "diffusion_steps": self.diffusion_steps,
                 "diffusion_score": diffusion_result["score"],
                 "diffusion_step_errors": diffusion_result["step_errors"],
+            "diffusion_method": diffusion_result.get("method"),
+            "diffusion_model_available": diffusion_result.get("model_available"),
+            "diffusion_near_threshold": self._route_thresholds(route_label).get(
+                "near_threshold",
+                diffusion_result.get("threshold_near"),
+            ),
+            "diffusion_hard_threshold": self._route_thresholds(route_label).get(
+                "hard_threshold",
+                diffusion_result.get("threshold_hard"),
+            ),
+            "route_calibrated_diffusion_thresholds": bool(
+                self._route_thresholds(route_label)
+            ),
                 "basic_tensor_check": basic_check["metrics"],
                 "feature_distance": feature_result,
                 "feature_distance_minimum_reference_count": self.minimum_feature_reference_count,

@@ -121,6 +121,7 @@ export default function DemoPage() {
   const [loadingCases, setLoadingCases] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
+  const [heatmapOpacity, setHeatmapOpacity] = useState(65);
 
   useEffect(() => {
     const loadCases = async () => {
@@ -348,7 +349,11 @@ export default function DemoPage() {
                   <p className="mt-2 text-sm text-slate-500">
                     {result.inference?.top_label
                       ? `Confidence: ${formatPercent(result.inference?.top_probability)}`
-                      : "The system stopped before producing a model output."}
+                      : result.policy?.action === "STOP"
+                        ? "The system stopped before producing a model output."
+                        : result.policy?.action === "REFUSE"
+                          ? "The model ran, but the governed policy withheld the output because reliability was too low."
+                          : "The system stopped before producing a model output."}
                   </p>
                 </div>
 
@@ -426,17 +431,58 @@ export default function DemoPage() {
                       <p className="mb-3 text-sm font-semibold">
                         Where the model focused
                       </p>
-                      <div className="flex min-h-[280px] items-center justify-center border-y border-slate-300 py-5">
+                      <div className="min-h-[280px] border-y border-slate-300 py-5">
                         {heatmapUrl ? (
-                          <img
-                            src={heatmapUrl}
-                            alt="Demo heatmap"
-                            className="max-h-[340px] w-full object-contain"
-                          />
+                          <div className="space-y-4">
+                            <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden border-y border-slate-300 bg-white">
+                              {inputImageUrl ? (
+                                <img
+                                  src={inputImageUrl}
+                                  alt="Original image under heatmap"
+                                  className="max-h-[340px] w-full object-contain"
+                                />
+                              ) : null}
+
+                              <img
+                                src={heatmapUrl}
+                                alt="Explainability heatmap overlay"
+                                className="absolute inset-0 h-full w-full object-contain"
+                                style={{ opacity: heatmapOpacity / 100 }}
+                              />
+                            </div>
+
+                            <div className="border-t border-slate-200 pt-4">
+                              <div className="mb-3 flex items-center justify-between text-xs">
+                                <span className="uppercase tracking-[0.18em] text-slate-500">
+                                  Heatmap opacity
+                                </span>
+                                <span className="font-semibold text-red-600">
+                                  {heatmapOpacity}%
+                                </span>
+                              </div>
+
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={heatmapOpacity}
+                                onChange={(event) => setHeatmapOpacity(Number(event.target.value))}
+                                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-red-100 accent-red-500"
+                                aria-label="Heatmap opacity"
+                              />
+
+                              <div className="mt-2 flex justify-between text-[11px] text-slate-400">
+                                <span>Original</span>
+                                <span>Focus map</span>
+                              </div>
+                            </div>
+                          </div>
                         ) : (
-                          <p className="text-sm text-slate-400">
-                            Focus map unavailable.
-                          </p>
+                          <div className="flex min-h-[280px] items-center justify-center">
+                            <p className="text-sm text-slate-400">
+                              Focus map unavailable.
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -564,7 +610,7 @@ function getAssistantDecision(action?: string) {
     case "REQUEST_EVIDENCE":
       return "I need better evidence before showing a result.";
     case "REFUSE":
-      return "I should not show a model result for this input.";
+      return "Output withheld due to low reliability.";
     case "STOP":
       return "I stopped the review for safety.";
     default:

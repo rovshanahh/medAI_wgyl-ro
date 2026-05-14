@@ -21,6 +21,7 @@ class PipelineState:
     explainability_result: dict | None = None
     quality_result: dict | None = None
     ood_result: dict | None = None
+    pre_inference_safety_result: dict | None = None
     routing_result: dict | None = None
     policy_result: dict | None = None
     selected_model: Any = None

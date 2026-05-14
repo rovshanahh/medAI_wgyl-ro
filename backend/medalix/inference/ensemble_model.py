@@ -841,7 +841,23 @@ class EnsembleModel:
         mean_probs = mc_probs.mean(axis=0)
         var_probs = mc_probs.var(axis=0)
 
-        top_idx = int(np.argmax(mean_probs))
+        abnormal_threshold = 0.40
+
+        # Binary bone safety rule:
+        # For abnormality screening, avoid false "Normal" when abnormal probability
+        # is clinically suspicious but below the default 0.50 threshold.
+        if len(self.labels) == 2 and "Abnormal" in self.labels:
+            abnormal_index = self.labels.index("Abnormal")
+            normal_index = self.labels.index("Normal")
+            abnormal_prob = float(mean_probs[abnormal_index])
+
+            if abnormal_prob >= abnormal_threshold:
+                top_idx = abnormal_index
+            else:
+                top_idx = normal_index
+        else:
+            top_idx = int(np.argmax(mean_probs))
+
         predictive_entropy = float(-np.sum(mean_probs * np.log(mean_probs + 1e-12)))
         disagreement_score = float(np.mean(var_probs))
         reliability_score = float(1.0 - disagreement_score)

@@ -198,22 +198,22 @@ class GovernedDecisionPolicy:
 
         if top_prob < refuse_probability_threshold:
             return self._output(
-                action="REFUSE",
-                reason="Prediction confidence is too low to produce an answer.",
+                action="ESCALATE",
+                reason="Prediction confidence is very low, so human review is required.",
                 risk_category=self._max_risk(risk_category, "HIGH"),
             )
 
         if reliability_score < refuse_reliability_threshold:
             return self._output(
-                action="REFUSE",
-                reason="Prediction reliability is too low to produce an answer.",
+                action="ESCALATE",
+                reason="Prediction reliability is low, so human review is required.",
                 risk_category=self._max_risk(risk_category, "HIGH"),
             )
 
         if avg_epi > refuse_epistemic_threshold:
             return self._output(
-                action="REFUSE",
-                reason="Epistemic uncertainty is too high to produce an answer.",
+                action="ESCALATE",
+                reason="Epistemic uncertainty is high, so human review is required.",
                 risk_category=self._max_risk(risk_category, "HIGH"),
             )
 

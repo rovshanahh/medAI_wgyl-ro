@@ -277,6 +277,7 @@ export default function ReviewPage() {
   const [file, setFile] = useState<File | null>(null);
   const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(65);
   const [batchResult, setBatchResult] = useState<BatchResponse | null>(null);
   const [confirmedRoute, setConfirmedRoute] = useState("");
   const [loading, setLoading] = useState(false);
@@ -294,7 +295,10 @@ export default function ReviewPage() {
   const routeDetector = result?.input_gate?.top_level_gate?.route_detector;
   const selectedRoute =
     result?.input_gate?.selected_route || routeDetector?.route_label || "—";
+  const policyAction = result?.policy?.action || "";
+  const outputAllowed = policyAction === "ANSWER" || policyAction === "ESCALATE";
   const inferenceRan = Boolean(result?.inference?.top_label);
+  const showModelOutput = inferenceRan && outputAllowed;
 
   const heatmapUrl = useMemo(() => {
     const rawPath = result?.explainability?.heatmap_path;
@@ -930,12 +934,16 @@ export default function ReviewPage() {
                     Main output
                   </p>
                   <p className="mt-2 text-4xl font-semibold tracking-tight">
-                    {inferenceRan ? result.inference?.top_label : "No inference"}
+                    {showModelOutput ? result.inference?.top_label : "Output withheld"}
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
-                    {inferenceRan
+                    {showModelOutput
                       ? `Confidence: ${formatPercent(result.inference?.top_probability)}`
-                      : "The system stopped before producing a model output."}
+                      : result.policy?.action === "STOP"
+                        ? "The system stopped before producing a model output."
+                        : result.policy?.action === "REFUSE"
+                          ? "The model ran internally, but the governed policy withheld the output because reliability was too low."
+                          : "No model output is available."}
                   </p>
                 </div>
 
@@ -1036,17 +1044,58 @@ export default function ReviewPage() {
                       <p className="mb-3 text-sm font-semibold">
                         Where the model focused
                       </p>
-                      <div className="flex min-h-[280px] items-center justify-center border-y border-slate-300 py-5">
-                        {heatmapUrl ? (
-                          <img
-                            src={heatmapUrl}
-                            alt="Heatmap"
-                            className="max-h-[340px] w-full object-contain"
-                          />
+                      <div className="min-h-[280px] border-y border-slate-300 py-5">
+                        {heatmapUrl && showModelOutput ? (
+                          <div className="space-y-4">
+                            <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden">
+                              {previewUrl && !isDicomFile ? (
+                                <img
+                                  src={previewUrl}
+                                  alt="Original image under heatmap"
+                                  className="max-h-[340px] w-full object-contain"
+                                />
+                              ) : null}
+
+                              <img
+                                src={heatmapUrl}
+                                alt="Explainability heatmap overlay"
+                                className="absolute inset-0 max-h-[340px] w-full object-contain"
+                                style={{ opacity: heatmapOpacity / 100 }}
+                              />
+                            </div>
+
+                            <div className="border-t border-slate-200 pt-4">
+                              <div className="mb-3 flex items-center justify-between text-xs">
+                                <span className="uppercase tracking-[0.18em] text-slate-500">
+                                  Heatmap opacity
+                                </span>
+                                <span className="font-semibold text-red-600">
+                                  {heatmapOpacity}%
+                                </span>
+                              </div>
+
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={heatmapOpacity}
+                                onChange={(event) => setHeatmapOpacity(Number(event.target.value))}
+                                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-red-100 accent-red-500"
+                                aria-label="Heatmap opacity"
+                              />
+
+                              <div className="mt-2 flex justify-between text-[11px] text-slate-400">
+                                <span>Original</span>
+                                <span>Focus map</span>
+                              </div>
+                            </div>
+                          </div>
                         ) : (
-                          <p className="text-sm text-slate-400">
-                            Focus map unavailable.
-                          </p>
+                          <div className="flex min-h-[280px] items-center justify-center">
+                            <p className="text-sm text-slate-400">
+                              Focus map unavailable.
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>

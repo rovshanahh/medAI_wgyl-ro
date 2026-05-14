@@ -1,0 +1,14 @@
+{
+  "method": "trained_5_step_denoising_diffusion_ood",
+  "model_path": "reference_data/ood/diffusion_ood_model.pth",
+  "near_threshold": 0.07584672197699545,
+  "hard_threshold": 0.12409679584205145,
+  "validation_error_mean": 0.03865609292969263,
+  "validation_error_std": 0.02971942501540656,
+  "validation_error_p90": 0.07584672197699545,
+  "validation_error_p97": 0.12409679584205145,
+  "diffusion_steps": 5,
+  "image_size": 128,
+  "training_images": 3400,
+  "validation_images": 600
+}

@@ -39,3 +39,24 @@ backend/backend_tree.txt
 
 # local test images
 backend/test_samples/
+
+# Local dependencies / environments
+frontend/node_modules/
+backend/venv/
+.venv/
+venv/
+
+# Large/generated datasets
+backend/raw_datasets/
+backend/datasets/
+backend/reference_data/non_medical_cifar10/
+backend/reference_data/non_medical_fashionmnist/
+
+# Generated evaluation outputs
+backend/evaluation/results/
+
+# Caches
+__pycache__/
+*.pyc
+.next/
+frontend/.next/

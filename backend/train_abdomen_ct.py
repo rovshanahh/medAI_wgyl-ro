@@ -1,5 +1,8 @@
 from pathlib import Path
 from collections import Counter
+import argparse
+import random
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -18,6 +21,15 @@ BATCH_SIZE = 32
 EPOCHS = 8
 LEARNING_RATE = 1e-4
 SEED = 42
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def get_device():
@@ -210,8 +222,8 @@ def print_confusion_matrix(labels, predictions):
         print()
 
 
-def save_checkpoint(model, best_val_acc, test_acc):
-    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+def save_checkpoint(model, best_val_acc, test_acc, output_path: Path, seed: int):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     checkpoint = {
         "model_state_dict": model.state_dict(),
@@ -227,16 +239,30 @@ def save_checkpoint(model, best_val_acc, test_acc):
         "modality": "ct",
         "region": "abdomen",
         "task": "kidney_ct_classification",
+        "seed": seed,
+        "ensemble_member": True,
     }
 
-    torch.save(checkpoint, OUTPUT_PATH)
+    torch.save(checkpoint, output_path)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--output", type=str, default=str(OUTPUT_PATH))
+    return parser.parse_args()
 
 
 def main():
-    torch.manual_seed(SEED)
+    args = parse_args()
+    output_path = Path(args.output)
+
+    set_seed(args.seed)
 
     device = get_device()
     print(f"Device: {device}")
+    print(f"Seed: {args.seed}")
+    print(f"Output: {output_path}")
 
     (
         train_dataset,
@@ -311,9 +337,15 @@ def main():
     print(f"\nTest accuracy: {test_acc:.4f}")
     print_confusion_matrix(labels, predictions)
 
-    save_checkpoint(model, best_val_acc, test_acc)
+    save_checkpoint(
+        model=model,
+        best_val_acc=best_val_acc,
+        test_acc=test_acc,
+        output_path=output_path,
+        seed=args.seed,
+    )
 
-    print(f"\nSaved to: {OUTPUT_PATH}")
+    print(f"\nSaved to: {output_path}")
     print(f"Best val_acc: {best_val_acc:.4f}")
     print(f"Test acc:     {test_acc:.4f}")
 

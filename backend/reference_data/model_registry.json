@@ -69,8 +69,14 @@
       ],
       "status": "ACTIVE",
       "checksum": "",
-      "model_path": "models/bone/bone_xray_standard.pth",
-      "ensemble_members": []
+      "model_path": "reference_data/models/bone/bone_seed_42.pth",
+      "ensemble_members": [
+        "reference_data/models/bone/bone_seed_42.pth",
+        "reference_data/models/bone/bone_seed_123.pth",
+        "reference_data/models/bone/bone_seed_777.pth"
+      ],
+      "deep_ensemble_enabled": true,
+      "ensemble_size": 3
     },
     "brain_mri_resnet18": {
       "model_id": "brain_mri_resnet18",
@@ -86,8 +92,12 @@
       ],
       "status": "ACTIVE",
       "checksum": "",
-      "model_path": "models/brain/brain_mri_resnet18.pth",
-      "ensemble_members": []
+      "model_path": "reference_data/models/brain/brain_seed_42.pth",
+      "ensemble_members": [
+        "reference_data/models/brain/brain_seed_42.pth",
+        "reference_data/models/brain/brain_seed_123.pth",
+        "reference_data/models/brain/brain_seed_777.pth"
+      ]
     },
     "retina_fundus_resnet18": {
       "model_id": "retina_fundus_resnet18",
@@ -103,8 +113,12 @@
       ],
       "status": "ACTIVE",
       "checksum": "",
-      "model_path": "reference_data/models/retina_fundus_resnet18.pth",
-      "ensemble_members": []
+      "model_path": "reference_data/models/retina/retina_seed_42.pth",
+      "ensemble_members": [
+        "reference_data/models/retina/retina_seed_42.pth",
+        "reference_data/models/retina/retina_seed_123.pth",
+        "reference_data/models/retina/retina_seed_777.pth"
+      ]
     },
     "abdomen_ct_resnet18": {
       "model_id": "abdomen_ct_resnet18",
@@ -120,8 +134,12 @@
       ],
       "status": "ACTIVE",
       "checksum": "",
-      "model_path": "reference_data/models/abdomen_ct_resnet18.pth",
-      "ensemble_members": [],
+      "model_path": "reference_data/models/abdomen/abdomen_seed_42.pth",
+      "ensemble_members": [
+        "reference_data/models/abdomen/abdomen_seed_42.pth",
+        "reference_data/models/abdomen/abdomen_seed_123.pth",
+        "reference_data/models/abdomen/abdomen_seed_777.pth"
+      ],
       "class_names": [
         "Cyst",
         "Normal",
@@ -144,8 +162,14 @@
       ],
       "status": "ACTIVE",
       "checksum": "",
-      "model_path": "reference_data/models/breast_mammography_resnet18.pth",
-      "ensemble_members": []
+      "model_path": "reference_data/models/breast/breast_seed_42.pth",
+      "ensemble_members": [
+        "reference_data/models/breast/breast_seed_42.pth",
+        "reference_data/models/breast/breast_seed_123.pth",
+        "reference_data/models/breast/breast_seed_777.pth"
+      ],
+      "deep_ensemble_enabled": true,
+      "ensemble_size": 3
     },
     "skin_dermoscopy_resnet18": {
       "model_id": "skin_dermoscopy_resnet18",

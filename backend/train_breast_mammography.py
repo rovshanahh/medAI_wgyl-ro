@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 import copy
 import csv
 import random
@@ -40,6 +41,13 @@ CLASS_NAMES = [
 TRAIN_RATIO = 0.70
 VAL_RATIO = 0.15
 TEST_RATIO = 0.15
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--output", type=str, default=str(MODEL_OUT))
+    return parser.parse_args()
 
 
 def set_seed(seed: int) -> None:
@@ -361,10 +369,15 @@ def print_confusion(confusion: dict) -> None:
 
 
 def main() -> None:
-    set_seed(SEED)
+    args = parse_args()
+    set_seed(args.seed)
+
+    output_path = Path(args.output)
 
     device = get_device()
     print("Device:", device)
+    print("Seed:", args.seed)
+    print("Output:", output_path)
 
     (
         train_ds,
@@ -438,7 +451,7 @@ def main() -> None:
     print(f"\nTest accuracy: {test_acc:.4f}")
     print_confusion(confusion)
 
-    MODEL_OUT.parent.mkdir(parents=True, exist_ok=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     torch.save(
         {
@@ -452,11 +465,13 @@ def main() -> None:
             "architecture": "resnet18",
             "task": "breast_mammography_benign_malignant_classification",
             "dataset": "CBIS-DDSM",
+            "seed": args.seed,
+            "ensemble_member": True,
         },
-        MODEL_OUT,
+        output_path,
     )
 
-    print(f"\nSaved to: {MODEL_OUT}")
+    print(f"\nSaved to: {output_path}")
     print(f"Best val_acc: {best_val_acc:.4f}")
     print(f"Test acc:     {test_acc:.4f}")
 

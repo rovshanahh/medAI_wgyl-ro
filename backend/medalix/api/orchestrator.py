@@ -11,6 +11,7 @@ from medalix.ingestion.ingestion_validator import IngestionValidator
 from medalix.ingestion.trained_medical_image_gate import TrainedMedicalImageGate
 from medalix.inference.ensemble_model import EnsembleModel
 from medalix.ood.ood_detector import OODDetector
+from medalix.ood.pre_inference_safety_gate import PreInferenceSafetyGate
 from medalix.policy.governed_decision_policy import GovernedDecisionPolicy
 from medalix.policy.policy_models import PolicyInput
 from medalix.preprocessing.preprocessing_pipeline import PreprocessingPipeline
@@ -296,6 +297,9 @@ class Orchestrator:
                 "secondary_verification_triggered",
                 False,
             ),
+            "secondary_verification_reason": inference_result.get(
+                "secondary_verification_reason"
+            ),
             "ensemble_member_count": inference_result.get("ensemble_member_count"),
             "mc_passes": inference_result.get("mc_passes"),
             "uncertainty_method": inference_result.get("uncertainty_method"),
@@ -360,6 +364,7 @@ class Orchestrator:
             "routing": state.routing_result or {},
             "quality": state.quality_result or {},
             "ood": state.ood_result or {},
+            "pre_inference_safety": state.pre_inference_safety_result or {},
             "explainability": state.explainability_result or {},
             "selected_model": self._selected_model_payload(state.selected_model),
             "policy": state.policy_result or {},
@@ -467,16 +472,44 @@ class Orchestrator:
             state.set_stage("medical_image_gate")
             medical_gate_result = TrainedMedicalImageGate().evaluate(working_content)
 
-            if not medical_gate_result.get("accepted", False) and not route_override:
+            medical_gate_accepted = bool(medical_gate_result.get("accepted", False))
+
+            if not medical_gate_accepted:
+                state.warnings.append(
+                    "Medical-image gate did not fully accept the image; route detector will still check for a supported medical route."
+                )
+
+            state.set_stage("route_detection")
+            route_result = self.route_detector.predict(working_content)
+            route_result = self._apply_manual_route_override(route_result, route_override)
+
+            # Rescue rule:
+            # Some valid medical images, especially skin/dermoscopy photos, can look
+            # like ordinary color photos to the broad medical gate. If the trained
+            # route detector finds a supported route, continue under review instead
+            # of stopping before inference.
+            if not medical_gate_accepted and route_result.get("supported", False):
+                route_result["medical_gate_rescued"] = True
+                route_result["requires_confirmation"] = True
+                route_result.setdefault("decision_reasons", [])
+                route_result["decision_reasons"].append(
+                    "Medical-image gate was weak, but trained route detector selected a supported medical route."
+                )
+                state.warnings.append(
+                    "Input continued under review because route detector selected a supported medical route despite weak medical-gate confidence."
+                )
+
+            if not medical_gate_accepted and not route_result.get("supported", False):
                 state.input_gate_result = {
                     "accepted_for_analysis": False,
                     "confidence": medical_gate_result.get("confidence"),
                     "message": medical_gate_result.get("reason"),
                     "selected_route": "unknown",
-                    "route_scores": {},
+                    "route_scores": route_result.get("probabilities", {}),
                     "manual_override": False,
                     "top_level_gate": {
                         "medical_image_gate": medical_gate_result,
+                        "route_detector": route_result,
                         "conversion": conversion_result,
                     },
                 }
@@ -503,17 +536,8 @@ class Orchestrator:
                 return self._stop_before_inference(
                     state=state,
                     reason=medical_gate_result.get("reason"),
-                    warnings=["Input rejected by trained medical-image gate."],
+                    warnings=["Input rejected because both medical-image gate and route detector could not support it."],
                 )
-
-            if not medical_gate_result.get("accepted", False) and route_override:
-                state.warnings.append(
-                    "Medical-image gate did not accept the image, but manual route confirmation was provided."
-                )
-
-            state.set_stage("route_detection")
-            route_result = self.route_detector.predict(working_content)
-            route_result = self._apply_manual_route_override(route_result, route_override)
 
             state.input_gate_result = self._build_input_gate_result(
                 route_result=route_result,
@@ -540,6 +564,32 @@ class Orchestrator:
                         "reason",
                         "Route detector could not safely select a supported route.",
                     ),
+                )
+
+            state.set_stage("pre_inference_safety")
+            state.pre_inference_safety_result = PreInferenceSafetyGate().evaluate(
+                medical_gate_result=medical_gate_result,
+                route_result=route_result,
+                manual_override=bool(route_result.get("manual_override", False)),
+            )
+
+            if not state.pre_inference_safety_result.get("passed", False):
+                state.routing_result = {
+                    "accepted_findings_set": [],
+                    "selected_model": None,
+                    "set_size": 0,
+                    "requires_confirmation": True,
+                    "routing_candidates": [],
+                    "reason": state.pre_inference_safety_result.get("reason"),
+                }
+
+                return self._stop_before_inference(
+                    state=state,
+                    reason=state.pre_inference_safety_result.get(
+                        "reason",
+                        "Pre-inference safety gate blocked analysis.",
+                    ),
+                    warnings=state.pre_inference_safety_result.get("reasons", []),
                 )
 
             selected_route = route_result["route_label"]

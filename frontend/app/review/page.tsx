@@ -275,6 +275,7 @@ export default function ReviewPage() {
   const [file, setFile] = useState<File | null>(null);
   const [batchFiles, setBatchFiles] = useState<File[]>([]);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(65);
   const [batchResult, setBatchResult] = useState<BatchResponse | null>(null);
   const [confirmedRoute, setConfirmedRoute] = useState("");
   const [loading, setLoading] = useState(false);
@@ -973,7 +974,11 @@ export default function ReviewPage() {
                   <p className="mt-2 text-sm text-slate-500">
                     {inferenceRan
                       ? `Confidence: ${formatPercent(result.inference?.top_probability)}`
-                      : "The system stopped before producing a model output."}
+                      : result.policy?.action === "STOP"
+                        ? "The system stopped before producing a model output."
+                        : result.policy?.action === "REFUSE"
+                          ? "The model ran, but the governed policy withheld the output because reliability was too low."
+                          : "The system stopped before producing a model output."}
                   </p>
                 </div>
 
@@ -1049,17 +1054,50 @@ export default function ReviewPage() {
                       <p className="mb-3 text-sm font-semibold">
                         Where the model focused
                       </p>
-                      <div className="flex min-h-[280px] items-center justify-center border-y border-slate-300 py-5">
+                      <div className="min-h-[280px] border-y border-slate-300 py-5">
                         {heatmapUrl ? (
-                          <img
-                            src={heatmapUrl}
-                            alt="Heatmap"
-                            className="max-h-[340px] w-full object-contain"
-                          />
+                          <div className="space-y-4">
+                            <div className="relative flex min-h-[280px] items-center justify-center overflow-hidden rounded-2xl bg-slate-50">
+                              <img
+                                src={heatmapUrl}
+                                alt="Explainability heatmap overlay"
+                                className="absolute inset-0 h-full w-full object-contain"
+                                style={{ opacity: heatmapOpacity / 100 }}
+                              />
+                            </div>
+
+                            <div className="border-t border-slate-200 pt-4">
+                              <div className="mb-3 flex items-center justify-between text-xs">
+                                <span className="uppercase tracking-[0.18em] text-slate-500">
+                                  Heatmap opacity
+                                </span>
+                                <span className="font-semibold text-red-600">
+                                  {heatmapOpacity}%
+                                </span>
+                              </div>
+
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={heatmapOpacity}
+                                onChange={(event) => setHeatmapOpacity(Number(event.target.value))}
+                                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-red-100 accent-red-500"
+                                aria-label="Heatmap opacity"
+                              />
+
+                              <div className="mt-2 flex justify-between text-[11px] text-slate-400">
+                                <span>Original</span>
+                                <span>Focus map</span>
+                              </div>
+                            </div>
+                          </div>
                         ) : (
-                          <p className="text-sm text-slate-400">
-                            Focus map unavailable.
-                          </p>
+                          <div className="flex min-h-[280px] items-center justify-center">
+                            <p className="text-sm text-slate-400">
+                              Focus map unavailable.
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>

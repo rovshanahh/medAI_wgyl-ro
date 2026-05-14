@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
  
 export const metadata: Metadata = {
-  title: "MedAIx",
+  title: "MEDAI",
   description: "Research-use medical imaging assistant — non-diagnostic",
 };
  
