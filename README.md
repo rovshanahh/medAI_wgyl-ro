@@ -1,20 +1,38 @@
 # Governed Medical Image Analysis
 
-A research-use medical imaging AI platform built for TED University SENG 492 Senior Project.
+A research-use governed medical imaging AI platform built for TED University SENG 492 Senior Project.
 
-Governed Medical Image Analysis accepts medical images, validates uploaded files, routes supported inputs to the correct specialist model, runs uncertainty-aware inference, generates Grad-CAM++ visual explanations, and returns a governed policy decision through a single end-to-end pipeline.
+Governed Medical Image Analysis accepts medical images, validates uploaded files, routes supported inputs to the correct specialist model, runs uncertainty-aware inference, checks out-of-distribution risk, generates Grad-CAM++ visual explanations, and returns a governed policy decision through a single end-to-end pipeline.
 
 This project is for research and educational use only. Outputs are non-diagnostic and must not be used for clinical decision-making.
+
+---
+
+## Core idea
+
+Most medical AI systems return a prediction for every input. This project focuses on a safer question:
+
+Should this prediction be trusted enough to show?
+
+The system can return one of five governed actions:
+
+| Action | Meaning |
+|---|---|
+| ANSWER | Output is considered reliable enough to show |
+| ESCALATE | Model ran, but human review is recommended |
+| REFUSE | Prediction is withheld because reliability is too low |
+| REQUEST_EVIDENCE | Input quality is insufficient; better evidence is needed |
+| STOP | Input is unsafe, unsupported, or non-medical; inference is blocked |
 
 ---
 
 ## What it does
 
 - Accepts uploaded images through the web interface: JPEG, PNG, TIFF, and DICOM
-- Supports both single-image review and batch review
+- Supports single-image review and batch review
 - Validates file format, header integrity, size limits, and image readability
 - Converts DICOM files into PNG-compatible image bytes for the MVP inference pipeline
-- Uses a multiclass route detector to classify uploads as:
+- Uses a trained multiclass route detector to classify uploads as:
   - abdomen_ct
   - brain_mri
   - bone_xray
@@ -23,7 +41,9 @@ This project is for research and educational use only. Outputs are non-diagnosti
   - retina_fundus
   - skin_dermoscopy
   - unknown
-- Stops unsupported, unknown, or low-confidence inputs before inference
+- Uses a trained medical-image gate to stop likely non-medical or unsupported inputs
+- Uses a pre-inference safety gate before model inference
+- Stops unsupported, unknown, OOD, or unsafe inputs before inference
 - Allows controlled manual route confirmation when automatic routing is unsafe or uncertain
 - Routes supported images to active specialist pipelines:
   - Abdomen CT — 4-class kidney CT classification: Cyst, Normal, Stone, Tumor
@@ -33,7 +53,14 @@ This project is for research and educational use only. Outputs are non-diagnosti
   - Chest X-ray — 14-label multilabel classification using CheXpert labels
   - Retina fundus — 5-class diabetic retinopathy severity classification
   - Skin dermoscopy — 7-class lesion classification
-- Runs MC dropout inference with epistemic and aleatoric uncertainty estimation
+- Uses deep ensemble inference for most active specialist routes
+- Uses MC dropout fallback when deep ensemble is not available
+- Computes reliability score, disagreement score, predictive entropy, epistemic uncertainty, and aleatoric uncertainty
+- Uses trained 5-step denoising diffusion OOD detection with route-specific thresholds
+- Classifies OOD risk as:
+  - IN_DISTRIBUTION
+  - NEAR_OOD
+  - HARD_OOD
 - Generates Grad-CAM++ heatmaps for active medical routes
 - Evaluates pipeline signals through a governed decision policy: ANSWER / REFUSE / ESCALATE / REQUEST_EVIDENCE / STOP
 - Returns a structured response including route result, detected region and modality, selected model, quality check, OOD status, uncertainty metrics, explainability output, warnings, policy decision, and pipeline timing data
@@ -58,15 +85,118 @@ This project is for research and educational use only. Outputs are non-diagnosti
 
 ## Active model summary
 
-| Model ID | Route | Architecture | Dataset / Source | Status |
-|---|---|---|---|---|
-| abdomen_ct_resnet18 | abdomen_ct | ResNet18 | CT Kidney Dataset: Normal, Cyst, Tumor, Stone | Active |
-| brain_mri_resnet18 | brain_mri | ResNet18 | Kaggle Brain Tumor MRI Dataset | Active |
-| bone_xray_standard | bone_xray | DenseNet121 | MURA | Active |
-| breast_mammography_resnet18 | breast_mammography | ResNet18 | Mammography dataset | Active |
-| chest_xray_mvp | chest_xray | DenseNet121 | CheXpert pretrained model | Active |
-| retina_fundus_resnet18 | retina_fundus | ResNet18 | APTOS 2019 Blindness Detection | Active |
-| skin_dermoscopy_resnet18 | skin_dermoscopy | ResNet18 | Skin dermoscopy dataset | Active |
+| Model ID | Route | Architecture | Dataset / Source | Ensemble | Status |
+|---|---|---|---|---:|---|
+| abdomen_ct_resnet18 | abdomen_ct | ResNet18 | CT Kidney Dataset: Normal, Cyst, Tumor, Stone | 3 models | Active |
+| brain_mri_resnet18 | brain_mri | ResNet18 | Kaggle Brain Tumor MRI Dataset | 3 models | Active |
+| bone_xray_standard | bone_xray | DenseNet121 | MURA | 3 models | Active |
+| breast_mammography_resnet18 | breast_mammography | ResNet18 | CBIS-DDSM mammography dataset | 3 models | Active |
+| chest_xray_mvp | chest_xray | DenseNet121 | CheXpert pretrained model | 1 model | Active |
+| retina_fundus_resnet18 | retina_fundus | ResNet18 | APTOS 2019 Blindness Detection | 3 models | Active |
+| skin_dermoscopy_resnet18 | skin_dermoscopy | ResNet18 | HAM10000 skin dermoscopy dataset | 3 models | Active |
+
+---
+
+## Deep ensemble coverage
+
+| Route | Deep ensemble enabled | Ensemble members | Uncertainty method |
+|---|---:|---:|---|
+| abdomen_ct | Yes | 3 | deep ensemble |
+| brain_mri | Yes | 3 | deep ensemble |
+| bone_xray | Yes | 3 | deep ensemble |
+| breast_mammography | Yes | 3 | deep ensemble |
+| retina_fundus | Yes | 3 | deep ensemble |
+| skin_dermoscopy | Yes | 3 | deep ensemble |
+| chest_xray | No | 1 | single model + MC dropout fallback |
+
+---
+
+## Current evaluation results
+
+### Active route demo results
+
+| Route | Output | Confidence | OOD Tier | Policy | Reliability | Uncertainty | Ensemble |
+|---|---|---:|---|---|---:|---|---:|
+| skin_dermoscopy | Melanoma | 60.2% | IN_DISTRIBUTION | ESCALATE | 58.9% | HIGH | 3 |
+| retina_fundus | Severe | 64.2% | IN_DISTRIBUTION | ESCALATE | 62.8% | HIGH | 3 |
+| brain_mri | Pituitary | 90.7% | IN_DISTRIBUTION | ANSWER | 90.5% | LOW | 3 |
+| abdomen_ct | Tumor | 98.0% | IN_DISTRIBUTION | ANSWER | 98.0% | LOW | 3 |
+| breast_mammography | Benign | 63.3% | IN_DISTRIBUTION | ESCALATE | 62.0% | HIGH | 3 |
+| chest_xray | Cardiomegaly | 84.2% | IN_DISTRIBUTION | ANSWER | 99.9% | LOW | 1 |
+
+### OOD evaluation
+
+Controlled evaluation results:
+
+| Evaluation group | Samples | Expected behavior | Observed behavior | Rate |
+|---|---:|---|---|---:|
+| Valid medical samples | 6 | Accepted / inference allowed | All accepted | 100% |
+| Synthetic / non-medical OOD samples | 41 | STOP before unsafe inference | All stopped | 100% |
+
+Current OOD summary:
+
+    Valid acceptance rate: 100%
+    OOD rejection rate: 100%
+
+This is a controlled evaluation result and should not be interpreted as a clinical safety guarantee.
+
+### Specialist model metrics
+
+| Specialist model | Dataset / task | Ensemble size | Accuracy | Macro-F1 | Status |
+|---|---|---:|---:|---:|---|
+| Abdomen CT | CT kidney classification | 3 | 99.8% test avg | — | Strong |
+| Brain MRI | tumor type classification | 3 | 96.0% val avg | 95.9% val avg | Strong |
+| Bone X-ray | MURA normal/abnormal | 3 | 81.8% val avg | 81.7% val avg | Moderate |
+| Retina Fundus | DR severity grading | 3 | 83.0% test avg | 64.9% test avg | Moderate, imbalanced |
+| Breast Mammography | benign/malignant | 3 | 71.0% test avg | — | Weak/conservative |
+| Skin Dermoscopy | HAM10000 lesion classification | 3 active ensemble | 61–62% test | ~59% test | Weak/conservative |
+| Chest X-ray | CheXpert multilabel | 1 | sample-level demo only | — | Single pretrained model |
+
+### Binary sensitivity / specificity
+
+| Model | Positive class | Sensitivity / Recall | Specificity |
+|---|---|---:|---:|
+| Bone X-ray | Abnormal | ~77.4% | ~85.9% |
+| Breast Mammography | Malignant | ~73.5% | ~68.4% |
+
+### Policy action distribution
+
+From the combined controlled evaluation:
+
+| Policy action | Count | Meaning |
+|---|---:|---|
+| ANSWER | 6 | Output allowed |
+| ESCALATE | 6 | Model ran, but human review recommended |
+| STOP | 41 | Input stopped before unsafe inference |
+
+STOP cases mainly correspond to synthetic/non-medical OOD samples. ESCALATE appears for valid but uncertain medical cases such as skin, retina, and breast.
+
+---
+
+## Main contribution
+
+The main contribution is not only training medical classifiers. The project builds a governed medical AI pipeline that controls whether a prediction should be shown, escalated, refused, or stopped.
+
+Baseline classifier pipeline:
+
+    image → model → prediction
+
+Governed pipeline:
+
+    image
+    → medical image gate
+    → route detection
+    → pre-inference safety gate
+    → preprocessing
+    → quality check
+    → conformal routing
+    → model registry
+    → specialist inference
+    → OOD detection
+    → uncertainty estimation
+    → explainability
+    → governed decision policy
+    → ANSWER / ESCALATE / REFUSE / REQUEST_EVIDENCE / STOP
 
 ---
 
@@ -75,45 +205,15 @@ This project is for research and educational use only. Outputs are non-diagnosti
 Current implemented checks:
 
 - Multiclass route detector supports abdomen_ct, brain_mri, bone_xray, breast_mammography, chest_xray, retina_fundus, skin_dermoscopy, and unknown
-- Unknown/random images are stopped before inference
+- Unknown/random/non-medical images are stopped before inference
 - All active medical routes run through route detection, preprocessing, model registry resolution, inference, OOD check, explainability, and governed policy
-- DICOM test input is converted and passed through the chest X-ray pipeline
+- DICOM test input is converted and passed through the pipeline
 - Grad-CAM++ is supported for DenseNet-based and ResNet-based models
 - Temporary uploaded files are deleted after processing
 - The frontend displays route probabilities, conformal routing candidates, model output probabilities, selected model, inference result, OOD status, policy action, warnings, and heatmap when available
 - The frontend supports single review, batch review, manual route confirmation, JSON export, and PDF report export
 - The backend exposes route/configuration metadata through `/config` and `/routes`
-
-Smoke test script:
-
-    cd backend
-    python3 smoke_test_pipeline.py
-
-Expected smoke test scenarios:
-
-- Abdomen CT sample → abdomen_ct route → abdomen_ct_resnet18 → inference + heatmap
-- Brain MRI sample → brain_mri route → brain_mri_resnet18 → inference + heatmap
-- Bone X-ray sample → bone_xray route → bone_xray_standard → inference + heatmap
-- Breast mammography sample → breast_mammography route → breast_mammography_resnet18 → inference + heatmap
-- Chest X-ray sample → chest_xray route → chest_xray_mvp → inference + heatmap
-- Retina fundus sample → retina_fundus route → retina_fundus_resnet18 → inference + heatmap
-- Skin dermoscopy sample → skin_dermoscopy route → skin_dermoscopy_resnet18 → inference + heatmap
-- Random image → unknown route → STOP before inference
-- DICOM sample → converted → routed → inference + heatmap
-
-Compact evaluation script:
-
-    cd backend
-    python3 evaluate_active_routes.py
-
-The compact evaluation script prints a route summary table and saves:
-
-    evaluation/active_route_evaluation.json
-
-Safety control evaluation:
-
-    cd backend
-    python3 evaluate_safety_controls.py
+- Evaluation scripts generate active route, OOD, and final metrics summaries
 
 ---
 
@@ -207,9 +307,9 @@ The frontend supports:
 - Model output probability display
 - Selected model display
 - Model output and confidence display when inference runs
-- “No inference was run” display for stopped inputs
+- Output withholding when policy does not allow automatic answer
 - OOD method and reason display
-- Grad-CAM++ heatmap display when available
+- Grad-CAM++ heatmap display when available and policy allows safe display
 - Policy action, risk category, and safety warnings
 - Recent review list
 - JSON report download
@@ -288,20 +388,22 @@ Prepare dataset:
     cd backend
     python3 prepare_abdomen_ct_dataset.py
 
-Train:
+Train one model:
 
     cd backend
     python3 train_abdomen_ct.py
 
-Model path:
+Train ensemble members if supported by the script:
 
-    backend/reference_data/models/abdomen_ct_resnet18.pth
+    python3 train_abdomen_ct.py --seed 42 --output reference_data/models/abdomen/abdomen_seed_42.pth
+    python3 train_abdomen_ct.py --seed 123 --output reference_data/models/abdomen/abdomen_seed_123.pth
+    python3 train_abdomen_ct.py --seed 777 --output reference_data/models/abdomen/abdomen_seed_777.pth
 
 ### Brain MRI model
 
 Dataset:
 
-    https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset
+    Kaggle Brain Tumor MRI Dataset
 
 Expected local path:
 
@@ -312,9 +414,45 @@ Train:
     cd backend
     python3 train_brain_mri.py
 
-Model path:
+Ensemble example:
 
-    backend/models/brain/brain_mri_resnet18.pth
+    python3 train_brain_mri.py --seed 42 --output reference_data/models/brain/brain_seed_42.pth
+    python3 train_brain_mri.py --seed 123 --output reference_data/models/brain/brain_seed_123.pth
+    python3 train_brain_mri.py --seed 777 --output reference_data/models/brain/brain_seed_777.pth
+
+### Bone X-ray model
+
+Dataset:
+
+    MURA-v1.1
+
+Expected local path:
+
+    backend/raw_datasets/MURA-v1.1/
+
+Train ensemble:
+
+    cd backend
+    python3 train_bone_xray.py --seed 42 --output reference_data/models/bone/bone_seed_42.pth
+    python3 train_bone_xray.py --seed 123 --output reference_data/models/bone/bone_seed_123.pth
+    python3 train_bone_xray.py --seed 777 --output reference_data/models/bone/bone_seed_777.pth
+
+### Breast mammography model
+
+Dataset:
+
+    CBIS-DDSM
+
+Expected local path:
+
+    backend/raw_datasets/cbis_ddsm/
+
+Train ensemble:
+
+    cd backend
+    python3 train_breast_mammography.py --seed 42 --output reference_data/models/breast/breast_seed_42.pth
+    python3 train_breast_mammography.py --seed 123 --output reference_data/models/breast/breast_seed_123.pth
+    python3 train_breast_mammography.py --seed 777 --output reference_data/models/breast/breast_seed_777.pth
 
 ### Retina fundus model
 
@@ -336,103 +474,73 @@ Expected files/folders:
     ├── valid.csv
     └── test.csv
 
-Train:
+Train ensemble:
 
     cd backend
-    python3 train_retina_fundus.py
-
-Model path:
-
-    backend/reference_data/models/retina_fundus_resnet18.pth
-
-### Route detector
-
-Train:
-
-    cd backend
-    python3 train_route_detector.py
-
-Model path:
-
-    backend/reference_data/route_detector/route_detector_model.pth
+    python3 train_retina_fundus.py --seed 42 --output reference_data/models/retina/retina_seed_42.pth
+    python3 train_retina_fundus.py --seed 123 --output reference_data/models/retina/retina_seed_123.pth
+    python3 train_retina_fundus.py --seed 777 --output reference_data/models/retina/retina_seed_777.pth
 
 ---
 
-## Specialist models
+## Train diffusion OOD detector
 
-The active specialist models are:
+The project includes a trained 5-step denoising diffusion OOD detector.
 
-| Model ID | Route | Dataset / Source |
-|---|---|---|
-| abdomen_ct_resnet18 | abdomen_ct | CT Kidney Dataset: Normal, Cyst, Tumor, Stone |
-| brain_mri_resnet18 | brain_mri | Kaggle Brain Tumor MRI Dataset |
-| bone_xray_standard | bone_xray | MURA |
-| breast_mammography_resnet18 | breast_mammography | Mammography dataset |
-| chest_xray_mvp | chest_xray | CheXpert pretrained DenseNet121 |
-| retina_fundus_resnet18 | retina_fundus | APTOS 2019 Blindness Detection |
-| skin_dermoscopy_resnet18 | skin_dermoscopy | Skin dermoscopy dataset |
+Train:
 
-Expected local raw dataset examples:
+    cd backend
+    python3 train_diffusion_ood.py --epochs 3 --max-images 4000
 
-    backend/raw_datasets/
-    ├── abdomen_ct/
-    ├── aptos2019/
-    ├── brain-tumor-mri-dataset/
-    ├── chest_xray/
-    ├── MURA-v1.1/
-    └── ...
+Saved outputs:
 
-Large raw datasets are not stored in this repository.
+    reference_data/ood/diffusion_ood_model.pth
+    reference_data/ood/diffusion_ood_thresholds.json
 
-Ignored local folders include:
+Calibrate route-specific OOD thresholds:
 
-    backend/raw_datasets/
-    backend/datasets/
-    backend/test_samples/
-    backend/logs/
-    backend/temp_uploads/
+    cd backend
+    python3 calibrate_diffusion_ood_thresholds.py
+
+Saved output:
+
+    reference_data/ood/route_diffusion_thresholds.json
 
 ---
 
-## Run evaluation / smoke tests
+## Run evaluation
 
-For route detector check:
-
-    cd backend
-    source venv/bin/activate
-    python3 test_route_detector.py
-
-For full-pipeline smoke checks:
+### Active route evaluation
 
     cd backend
     source venv/bin/activate
-    python3 smoke_test_pipeline.py
+    PYTHONPATH=. python3 evaluation/evaluate_active_routes.py
 
-For compact active-route evaluation:
+Saves:
 
-    cd backend
-    source venv/bin/activate
-    python3 evaluate_active_routes.py
+    evaluation/results/active_route_evaluation_<timestamp>.json
+    evaluation/results/active_route_evaluation_<timestamp>.csv
 
-For safety control evaluation:
-
-    cd backend
-    source venv/bin/activate
-    python3 evaluate_safety_controls.py
-
-The active route evaluation report is saved to:
-
-    evaluation/active_route_evaluation.json
-
-Older chest-specific evaluation can still be run if the evaluation folder is prepared:
+### OOD evaluation
 
     cd backend
     source venv/bin/activate
-    python3 evaluate_chest_mvp.py
+    PYTHONPATH=. python3 evaluation/evaluate_ood_detector.py
 
-Chest-specific results are saved to:
+Saves:
 
-    evaluation/evaluation_results.json
+    evaluation/results/ood_evaluation_<timestamp>.json
+    evaluation/results/ood_evaluation_<timestamp>.csv
+
+### Final metrics summary
+
+    cd backend
+    source venv/bin/activate
+    PYTHONPATH=. python3 evaluation/build_metrics_summary.py
+
+Saves:
+
+    evaluation/results/final_metrics_summary.txt
 
 ---
 
@@ -441,23 +549,28 @@ Chest-specific results are saved to:
     medAI_wgyl-ro/
     ├── backend/
     │   ├── main.py
-    │   ├── smoke_test_pipeline.py
-    │   ├── evaluate_active_routes.py
-    │   ├── evaluate_safety_controls.py
-    │   ├── test_route_detector.py
     │   ├── train_route_detector.py
     │   ├── train_abdomen_ct.py
-    │   ├── prepare_abdomen_ct_dataset.py
-    │   ├── prepare_abdomen_ct_routing_dataset.py
+    │   ├── train_brain_mri.py
+    │   ├── train_bone_xray.py
+    │   ├── train_breast_mammography.py
+    │   ├── train_retina_fundus.py
+    │   ├── train_diffusion_ood.py
+    │   ├── calibrate_diffusion_ood_thresholds.py
+    │   ├── evaluation/
+    │   │   ├── evaluate_active_routes.py
+    │   │   ├── evaluate_ood_detector.py
+    │   │   ├── build_metrics_summary.py
+    │   │   └── verify_cleanup.py
     │   ├── medalix/
     │   │   ├── api/                   # Orchestrator, routes, pipeline state, session store
-    │   │   ├── ingestion/             # Validation and DICOM conversion
+    │   │   ├── ingestion/             # Validation, DICOM conversion, medical image gate
     │   │   ├── preprocessing/         # Modality-aware preprocessing
-    │   │   ├── detection/             # Multiclass route detector and conformal router
+    │   │   ├── detection/             # Route detector and conformal router
     │   │   ├── quality/               # Image/tensor quality assessment
-    │   │   ├── ood/                   # Route-safe OOD checks
+    │   │   ├── ood/                   # OOD detector and pre-inference safety gate
     │   │   ├── registry/              # Model registry and route-to-model resolution
-    │   │   ├── inference/             # Specialist model inference with MC dropout
+    │   │   ├── inference/             # Specialist inference and deep ensemble logic
     │   │   ├── explainability/        # Grad-CAM++ heatmap generation
     │   │   ├── policy/                # Governed decision policy
     │   │   ├── audit/                 # PHI-free logging and audit traces
@@ -466,16 +579,16 @@ Chest-specific results are saved to:
     │   │   ├── model_registry.json
     │   │   ├── policy_thresholds.json
     │   │   ├── route_detector/
-    │   │   │   └── route_detector_model.pth
+    │   │   ├── input_gate/
+    │   │   ├── ood/
     │   │   └── models/
-    │   │       ├── abdomen_ct_resnet18.pth
-    │   │       ├── breast_mammography_resnet18.pth
-    │   │       ├── retina_fundus_resnet18.pth
-    │   │       └── skin_dermoscopy_resnet18.pth
-    │   └── evaluation/
+    │   └── requirements.txt
     ├── frontend/
     │   └── app/
-    │       └── page.tsx
+    │       ├── page.tsx
+    │       ├── demo/
+    │       ├── review/
+    │       └── layout.tsx
     └── README.md
 
 ---
@@ -486,15 +599,15 @@ Every image passes through the following stages in order:
 
 1. Ingestion validation — file format, header integrity, size limits, and readability checks
 2. Format preparation — DICOM files are converted into PNG-compatible image bytes
-3. Route detection — multiclass route detector predicts supported route or unknown
-4. Safety stop — unknown or low-confidence routes stop before inference
-5. Manual route confirmation — optional controlled human confirmation for uncertain routes
+3. Medical image gate — rejects likely non-medical or unsupported images
+4. Route detection — multiclass route detector predicts supported route or unknown
+5. Pre-inference safety gate — checks route support, medical confidence, and manual confirmation state
 6. Preprocessing — modality-aware resizing, grayscale/RGB handling, and normalization
 7. Quality assessment — tensor validity, resolution, contrast warning signals, and corruption indicators
 8. Conformal routing — route candidate set and confirmation behavior
 9. Model registry — deterministic route-to-model resolution
-10. Inference — specialist model inference with MC dropout uncertainty estimation
-11. OOD detection — route-safe distribution and tensor checks
+10. Inference — specialist model inference with deep ensemble or fallback uncertainty estimation
+11. OOD detection — trained 5-step denoising diffusion OOD detector with route-specific thresholds
 12. Explainability — Grad-CAM++ heatmap generation
 13. Governed decision policy — final ANSWER / REFUSE / ESCALATE / REQUEST_EVIDENCE / STOP decision
 14. Audit and cleanup — PHI-free audit trace and temporary upload deletion
@@ -535,8 +648,10 @@ This project is an academic MVP and has important limitations:
 - It must not be used for clinical decision-making.
 - Route detection is limited to the currently trained classes.
 - DICOM support is implemented through pixel extraction and image conversion, not full clinical DICOM metadata reasoning.
-- OOD checking is conservative and route-safe, but not a complete medical safety guarantee.
+- OOD checking is conservative and route-specific, but not a complete medical safety guarantee.
 - Manual route confirmation is intended for controlled research/demo review, not casual patient use.
+- Some specialist classifiers are intentionally treated conservatively because their reliability is weaker.
+- Breast mammography, active skin ensemble, and some retinal severity classes require stronger clinical validation before any real-world use.
 - Model outputs are intended for research, education, and demonstration only.
 
 ---
